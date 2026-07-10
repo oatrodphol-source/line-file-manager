@@ -74,19 +74,40 @@ function App() {
     }
   };
 
-  // 🔴 ฟังก์ชันใหม่: สำหรับลบไฟล์
   const deleteFile = async () => {
     const isConfirmed = window.confirm('⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบไฟล์นี้?\n(ลบแล้วจะไม่สามารถกู้คืนได้)');
     if (isConfirmed) {
       try {
         await axios.delete(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`);
-        // อัปเดตหน้าจอโดยลบไฟล์นั้นออกจากรายการ
         setMediaFiles(mediaFiles.filter(f => f._id !== selectedFile._id));
-        setSelectedFile(null); // ปิดหน้าต่าง Modal
-      } catch (err) {
-        alert('❌ เกิดข้อผิดพลาดในการลบไฟล์');
-        console.error(err);
-      }
+        setSelectedFile(null);
+      } catch (err) { alert('❌ เกิดข้อผิดพลาดในการลบไฟล์'); console.error(err); }
+    }
+  };
+
+  // 🟢 ฟังก์ชันใหม่: จัดการการดาวน์โหลดแบบฉลาดทะลุ LINE
+  const handleDownload = (url, fileName) => {
+    // 1. ถ้าเปิดแอปอยู่ใน LINE (LIFF) ให้เตะไปเปิดบราวเซอร์ข้างนอก
+    if (liff.isInClient()) {
+      liff.openWindow({ url: url, external: true });
+    } else {
+      // 2. ถ้าเปิดบนคอมหรือบราวเซอร์ปกติ ให้ใช้ Fetch บังคับโหลดไฟล์ลงเครื่องทันที
+      fetch(url)
+        .then(response => response.blob())
+        .then(blob => {
+          const blobUrl = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = fileName || 'downloaded_file';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(blobUrl);
+        })
+        .catch(err => {
+          console.error('Download fallback:', err);
+          window.open(url, '_blank'); // ท่าไม้ตายสุดท้าย
+        });
     }
   };
 
@@ -96,29 +117,44 @@ function App() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
-      {/* 🟢 หน้าต่าง Modal (เปิดเมื่อกดคลิกที่ไฟล์) */}
+      {/* หน้าต่าง Modal */}
       {selectedFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm">
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]">
             
-            <div className="flex-1 bg-gray-100 flex items-center justify-center relative min-h-[300px]">
+            {/* ซ้าย: พรีวิวรูป/ไฟล์ และปุ่มดาวน์โหลด */}
+            <div className="flex-1 bg-gray-100 flex items-center justify-center relative min-h-[300px] group">
               {selectedFile.fileType === 'image' ? (
-                <img src={selectedFile.fileUrl} alt="full" className="max-w-full max-h-[50vh] md:max-h-[90vh] object-contain" />
+                <>
+                  <img src={selectedFile.fileUrl} alt="full" className="max-w-full max-h-[50vh] md:max-h-[90vh] object-contain" />
+                  {/* 🟢 ปุ่มดาวน์โหลดรูปภาพ (โชว์มุมซ้ายล่าง) */}
+                  <button 
+                    onClick={() => handleDownload(selectedFile.fileUrl, selectedFile.fileName || `image_${Date.now()}.jpg`)}
+                    className="absolute bottom-4 left-4 bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-white py-2 px-4 rounded-xl shadow-lg transition-all flex items-center gap-2"
+                  >
+                    <span className="text-xl">⬇️</span> <span className="text-sm font-bold">บันทึกรูปภาพ</span>
+                  </button>
+                </>
               ) : (
                 <div className="text-center p-8">
                   <span className="text-8xl mb-4 block">📄</span>
-                  <a href={selectedFile.fileUrl} target="_blank" rel="noreferrer" className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-xl transition-colors shadow-sm">ดาวน์โหลดไฟล์นี้</a>
+                  {/* 🟢 เปลี่ยนปุ่มโหลดไฟล์ให้ใช้ฟังก์ชันใหม่ */}
+                  <button 
+                    onClick={() => handleDownload(selectedFile.fileUrl, selectedFile.fileName || `file_${Date.now()}.pdf`)}
+                    className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-xl transition-colors shadow-sm"
+                  >
+                    ⬇️ ดาวน์โหลดไฟล์นี้
+                  </button>
                 </div>
               )}
-              {/* ปุ่มกลับ/ปิด ชัดเจนขึ้น */}
+              {/* ปุ่มปิด */}
               <button onClick={() => { setSelectedFile(null); setIsEditing(false); }} className="absolute top-4 right-4 bg-white text-gray-800 rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-gray-200 hover:scale-110 transition-all font-black text-xl border-2 border-gray-100">✕</button>
             </div>
 
+            {/* ขวา: รายละเอียด (เหมือนเดิม) */}
             <div className="w-full md:w-96 p-6 flex flex-col bg-white overflow-y-auto border-l border-gray-100">
               <div className="flex justify-between items-center mb-1">
                 <h3 className="text-xl font-bold text-gray-800">รายละเอียดไฟล์</h3>
-                
-                {/* 🔴 เพิ่มปุ่มลบ ตรงข้ามกับปุ่มแก้ไข */}
                 {!isEditing ? (
                   <div className="flex gap-2">
                     <button onClick={deleteFile} className="text-sm bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold transition-colors shadow-sm">🗑️ ลบ</button>
@@ -161,9 +197,8 @@ function App() {
         </div>
       )}
 
-      {/* --- Sidebar ฝั่งจอคอม --- */}
+      {/* --- Sidebar และส่วนอื่นๆ คงเดิม --- */}
       <div className="w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col hidden md:flex">
-        {/* 🟢 กดที่โลโก้เพื่อกลับหน้าหลัก */}
         <div className="p-6 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setSelectedTag('All')}>
           <h2 className="text-2xl font-black text-green-600 tracking-tight">📁 File Manager</h2>
         </div>
@@ -194,7 +229,6 @@ function App() {
 
         {selectedTag !== 'Admin' && (
           <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex overflow-x-auto gap-2 shadow-sm z-0">
-            {/* 🟢 ปุ่ม "ทั้งหมด" ในมือถือก็ทำหน้าที่เหมือนปุ่มกลับหน้าหลัก (Home) */}
             <button onClick={() => setSelectedTag('All')} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === 'All' ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏠 ทั้งหมด</button>
             {allTags.map((tag, index) => (
               <button key={index} onClick={() => setSelectedTag(tag)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === tag ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏷️ {tag}</button>
