@@ -86,28 +86,30 @@ function App() {
   };
 
   // 🟢 ฟังก์ชันใหม่: จัดการการดาวน์โหลดแบบฉลาดทะลุ LINE
-  const handleDownload = (url, fileName) => {
-    // 1. ถ้าเปิดแอปอยู่ใน LINE (LIFF) ให้เตะไปเปิดบราวเซอร์ข้างนอก
+ const handleDownload = async (url, fileName) => {
+    // 1. ถ้าอยู่ในแอป LINE ให้เตะออกไปเปิดใน Safari/Chrome (เพราะในแอป LINE เปิด PDF ลำบาก)
     if (liff.isInClient()) {
       liff.openWindow({ url: url, external: true });
     } else {
-      // 2. ถ้าเปิดบนคอมหรือบราวเซอร์ปกติ ให้ใช้ Fetch บังคับโหลดไฟล์ลงเครื่องทันที
-      fetch(url)
-        .then(response => response.blob())
-        .then(blob => {
-          const blobUrl = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = blobUrl;
-          link.download = fileName || 'downloaded_file';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(blobUrl);
-        })
-        .catch(err => {
-          console.error('Download fallback:', err);
-          window.open(url, '_blank'); // ท่าไม้ตายสุดท้าย
-        });
+      try {
+        // 2. ใช้เทคนิคการดึงไฟล์เป็น Blob เพื่อให้ดาวน์โหลดได้ชัวร์ๆ
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileName || 'document.pdf'; // บังคับชื่อไฟล์
+        document.body.appendChild(link);
+        link.click();
+        
+        // ล้างค่าหลังจากดาวน์โหลดเสร็จ
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        console.error('Download error:', err);
+        window.open(url, '_blank'); // ท่าไม้ตายสุดท้าย: เปิดหน้าใหม่
+      }
     }
   };
 
