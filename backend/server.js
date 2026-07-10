@@ -76,7 +76,10 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 async function handleEvent(event) {
   if (event.type !== 'message') return Promise.resolve(null);
 
-  const userId = event.source.userId; // 🟢 ดึง LINE ID ของคนที่ส่งข้อความมา
+  const userId = event.source.userId; 
+  // 🟢 ดึงข้อมูลเพิ่มว่าข้อความนี้มาจากกลุ่ม หรือ แชทส่วนตัว
+  const sourceType = event.source.type; 
+  const groupId = event.source.groupId || null;
 
   if (event.message.type === 'image' || event.message.type === 'file') {
     try {
@@ -98,18 +101,25 @@ async function handleEvent(event) {
         uploadStream.end(buffer);
       });
 
-      // 🟢 บันทึกข้อมูลลงฐานข้อมูล พร้อมระบุเจ้าของไฟล์ (ownerId)
+      // 🟢 บันทึกข้อมูลลงฐานข้อมูล พร้อมรหัสกลุ่ม
       const newMedia = new Media({
         fileUrl: uploadResult.secure_url,
         fileType: event.message.type,
         fileName: event.message.fileName || `file_${Date.now()}`,
-        ownerId: userId // ผูกไฟล์นี้กับคนที่ส่งเข้ามา
+        ownerId: userId,
+        sourceType: sourceType, // ใส่ว่าเป็นกลุ่มหรือส่วนตัว
+        groupId: groupId // ใส่ ID กลุ่ม
       });
       await newMedia.save();
 
+      // 🟢 เปลี่ยนข้อความตอบกลับให้เข้ากับสถานการณ์
+      const replyText = sourceType === 'group' 
+        ? '🤖 บอทแอบเซฟไฟล์จากแชทกลุ่มเข้าคลังเรียบร้อยแล้ว!' 
+        : '🎉 บันทึกไฟล์ส่วนตัวของคุณเรียบร้อยแล้ว!';
+
       return client.replyMessage(event.replyToken, {
         type: 'text',
-        text: 'บันทึกไฟล์ของคุณเรียบร้อยแล้ว! 🎉'
+        text: replyText
       });
 
     } catch (error) {

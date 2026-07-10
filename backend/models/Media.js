@@ -5,11 +5,14 @@ const mediaSchema = new mongoose.Schema({
   fileType: { type: String, required: true },
   fileName: { type: String },
   
-  // 🟢 ส่วนที่เพิ่มเข้ามาใหม่สำหรับ Phase 1
-  ownerId: { type: String, required: true, default: 'system' }, // ผูกกับ LINE ID ของคนส่ง
-  folderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: null }, // ระบุว่าอยู่โฟลเดอร์ไหน
-  tags: [{ type: String }], // เก็บแฮชแท็ก เช่น ['#สำคัญ', '#สหกิจ']
-  note: { type: String } // เก็บข้อความอธิบายยาวๆ
+  ownerId: { type: String, required: true, default: 'system' }, 
+  folderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', default: null }, 
+  tags: [{ type: String }], 
+  note: { type: String },
+  
+  // 🟢 2 บรรทัดที่เพิ่มใหม่สำหรับระบบแชทกลุ่ม
+  sourceType: { type: String, default: 'user' }, // เก็บว่ามาจาก 'user' (ส่วนตัว) หรือ 'group' (กลุ่ม)
+  groupId: { type: String, default: null } // เก็บ ID ของกลุ่มแชทนั้นๆ
   
 }, { timestamps: true });
 
