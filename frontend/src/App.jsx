@@ -31,7 +31,7 @@ function App() {
 
   const fetchMedia = async () => {
     try {
-      const response = await axios.get('https://teams-modes-entering-cams.trycloudflare.com/api/media');
+      const response = await axios.get('https://line-file-manager.onrender.com/api/media');
       setMediaFiles(response.data);
     } catch (error) {
       console.error("ดึงข้อมูลไม่สำเร็จ (มือถืออาจจะมองไม่เห็น localhost):", error);
