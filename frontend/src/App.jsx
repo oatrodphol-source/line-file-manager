@@ -59,12 +59,13 @@ function App() {
     } catch (err) { console.error(err); }
   };
 
-  const saveConfig = async () => {
+const saveConfig = async () => {
     try {
       await axios.post('https://line-file-manager.onrender.com/api/admin/config', {
         userId: dbUser.lineId,
         aiEnabled: aiConfig.aiEnabled,
-        aiPrompt: aiConfig.aiPrompt
+        aiPrompt: aiConfig.aiPrompt,
+        aiModel: aiConfig.aiModel // 🟢 ส่งชื่อโมเดลไปบันทึก
       });
       alert('✅ บันทึกการตั้งค่า AI เรียบร้อยแล้ว!');
     } catch (err) { alert('❌ เกิดข้อผิดพลาดในการบันทึก'); }
@@ -169,6 +170,18 @@ function App() {
                 ></textarea>
               </div>
 
+             <div className="mb-6">
+                <label className="block font-semibold text-gray-700 mb-2">เวอร์ชันโมเดล AI (AI Model Version)</label>
+                <p className="text-xs text-gray-500 mb-3">ปรับเปลี่ยนเวอร์ชันความฉลาดของ AI เช่น gemini-1.5-flash-latest หรือ gemini-1.5-pro-latest</p>
+                <input 
+                  type="text"
+                  className="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all font-mono text-sm"
+                  value={aiConfig.aiModel || ''}
+                  onChange={(e) => setAiConfig({...aiConfig, aiModel: e.target.value})}
+                  disabled={!aiConfig.aiEnabled}
+                  placeholder="เช่น gemini-1.5-flash-latest"
+                />
+              </div>
               <button 
                 onClick={saveConfig}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-sm"

@@ -15,7 +15,7 @@ app.use(cors());
 
 // ตั้งค่า AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
 
 // ตั้งค่าระบบอื่นๆ
 cloudinary.config({
@@ -59,13 +59,13 @@ app.get('/api/admin/config', async (req, res) => {
 
 app.post('/api/admin/config', express.json(), async (req, res) => {
   try {
-    const { userId, aiEnabled, aiPrompt } = req.body;
+    const { userId, aiEnabled, aiPrompt, aiModel } = req.body; // 🟢 เพิ่ม aiModel
     const user = await User.findOne({ lineId: userId });
     if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     
     const sysConfig = await SystemConfig.findOneAndUpdate(
       { key: 'default_config' },
-      { aiEnabled, aiPrompt },
+      { aiEnabled, aiPrompt, aiModel }, // 🟢 บันทึก aiModel ลงฐานข้อมูล
       { new: true, upsert: true }
     );
     res.json(sysConfig);
@@ -112,11 +112,17 @@ async function handleEvent(event) {
       const sysConfig = await SystemConfig.findOne({ key: 'default_config' });
       
       // 🟢 ตรวจสอบสถานะว่าแอดมินเปิด AI ไว้หรือไม่
+      // 🟢 ตรวจสอบสถานะว่าแอดมินเปิด AI ไว้หรือไม่
       if (sysConfig && sysConfig.aiEnabled) {
          try {
             const mimeType = event.message.type === 'image' ? 'image/jpeg' : 'application/pdf';
-            const result = await model.generateContent([
-              sysConfig.aiPrompt, // ดึงคำสั่งจากที่ตั้งค่าในหน้าเว็บ
+            
+            // 🟢 โหลดชื่อโมเดลจากฐานข้อมูลที่แอดมินตั้งค่าไว้ (ถ้าไม่มีให้ใช้ค่าพื้นฐาน)
+            const modelName = sysConfig.aiModel || "gemini-1.5-flash-latest";
+            const dynamicModel = genAI.getGenerativeModel({ model: modelName });
+
+            const result = await dynamicModel.generateContent([
+              sysConfig.aiPrompt, 
               { inlineData: { data: buffer.toString("base64"), mimeType } }
             ]);
             summary = result.response.text();
