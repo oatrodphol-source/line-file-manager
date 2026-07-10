@@ -62,6 +62,45 @@ app.get('/api/media', async (req, res) => {
   }
 });
 
+const SystemConfig = require('./models/SystemConfig'); // 🟢 เพิ่มบรรทัดนี้ไว้ด้านบนสุดตรงที่นำเข้า Model
+
+// --- 🟢 API สำหรับดึงการตั้งค่าระบบ ---
+app.get('/api/admin/config', async (req, res) => {
+  try {
+    let config = await SystemConfig.findOne({ key: 'default_config' });
+    if (!config) {
+      // ถ้ายังไม่มีการตั้งค่า ให้สร้างค่าเริ่มต้นขึ้นมา
+      config = await SystemConfig.create({ key: 'default_config' });
+    }
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- 🟢 API สำหรับแอดมินใช้อัปเดตการตั้งค่า ---
+app.post('/api/admin/config', express.json(), async (req, res) => {
+  try {
+    const { userId, aiEnabled, aiPrompt } = req.body;
+    
+    // 1. เช็กก่อนว่าคนที่ส่งคำขอมา เป็น Admin จริงไหม
+    const user = await User.findOne({ lineId: userId });
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: 'ไม่มีสิทธิ์เข้าถึง (Admin only)' });
+    }
+
+    // 2. อัปเดตการตั้งค่า
+    const config = await SystemConfig.findOneAndUpdate(
+      { key: 'default_config' },
+      { aiEnabled, aiPrompt },
+      { new: true, upsert: true }
+    );
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 🟢 3. Webhook รับข้อความและไฟล์จาก LINE
 app.post('/webhook', line.middleware(config), (req, res) => {
   Promise
