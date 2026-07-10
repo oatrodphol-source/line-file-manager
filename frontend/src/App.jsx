@@ -1,24 +1,32 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import liff from '@line/liff'; // 👈 1. นำเข้า LIFF SDK
+import liff from '@line/liff';
 import './App.css';
 
 function App() {
   const [mediaFiles, setMediaFiles] = useState([]);
-  const [profile, setProfile] = useState(null); // 👈 2. โกดังเก็บข้อมูลผู้ใช้
+  const [profile, setProfile] = useState(null);
 
   useEffect(() => {
-    // ฟังก์ชันสั่งสตาร์ท LIFF
     const initLiff = async () => {
       try {
         await liff.init({
-          liffId: "2010664170-y9VzNahZ" // 👈 🔴 เอา LIFF ID มาวางทับข้อความนี้เลย
+          liffId: "2010664170-y9VzNahZ" // 👈 🔴 เอา LIFF ID ของคุณมาใส่ตรงนี้
         });
 
-        // ถ้าอยู่ในแอป LINE ให้ดึงข้อมูลโปรไฟล์มาเลย
         if (liff.isLoggedIn()) {
           const userProfile = await liff.getProfile();
           setProfile(userProfile);
+
+          // 🟢 1. ส่งข้อมูลโปรไฟล์ไปบันทึกที่ฐานข้อมูล (ระบบจะรู้ว่าใครล็อกอิน)
+          await axios.post('https://line-file-manager.onrender.com/api/users', {
+            lineId: userProfile.userId,
+            displayName: userProfile.displayName,
+            pictureUrl: userProfile.pictureUrl
+          });
+
+          // 🟢 2. สั่งดึงรูปภาพ โดยส่ง LINE ID ไปเป็นตัวกรอง
+          fetchMedia(userProfile.userId);
         }
       } catch (err) {
         console.error("เกิดข้อผิดพลาดในการโหลด LIFF:", err);
@@ -26,22 +34,20 @@ function App() {
     };
 
     initLiff();
-    fetchMedia();
   }, []);
 
-  const fetchMedia = async () => {
+  // 🟢 ฟังก์ชันดึงข้อมูลแบบระบุตัวตน (ส่ง userId ไปด้วย)
+  const fetchMedia = async (userId) => {
     try {
-      const response = await axios.get('https://line-file-manager.onrender.com/api/media');
+      const response = await axios.get(`https://line-file-manager.onrender.com/api/media?userId=${userId}`);
       setMediaFiles(response.data);
     } catch (error) {
-      console.error("ดึงข้อมูลไม่สำเร็จ (มือถืออาจจะมองไม่เห็น localhost):", error);
+      console.error("ดึงข้อมูลไม่สำเร็จ:", error);
     }
   };
 
   return (
     <div className="container">
-      
-      {/* 🟢 ส่วนหัวเว็บ: โชว์โปรไฟล์ LINE ถ้ามีข้อมูล */}
       {profile ? (
         <div className="profile-box">
           <img src={profile.pictureUrl} alt="profile" className="profile-img" />
@@ -51,7 +57,7 @@ function App() {
         <h1>📁 My LINE File Manager</h1>
       )}
 
-      <p>ระบบจัดการไฟล์และรูปภาพจาก LINE Bot</p>
+      <p>พื้นที่เก็บไฟล์ส่วนตัวของคุณ</p>
 
       <div className="gallery">
         {mediaFiles.map((item) => (
