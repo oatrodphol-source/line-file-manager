@@ -81,6 +81,45 @@ async function handleEvent(event) {
   const sourceType = event.source.type; 
   const groupId = event.source.groupId || null;
 
+  // 🟢 ฟีเจอร์จับแฮชแท็กจากข้อความ
+  if (event.message.type === 'text') {
+    const text = event.message.text;
+    
+    // เช็กว่าข้อความมีเครื่องหมาย # หรือไม่
+    if (text.includes('#')) {
+      const tags = text.match(/#[^\s#]+/g); // ดึงคำที่มี # ทั้งหมดออกมา
+      
+      if (tags && tags.length > 0) {
+        try {
+          // ค้นหาไฟล์ล่าสุดที่คุณหรือกลุ่มนี้เพิ่งส่งเข้ามา
+          const latestMedia = await Media.findOne({
+            ownerId: userId,
+            groupId: groupId
+          }).sort({ createdAt: -1 });
+
+          if (latestMedia) {
+            // เอาแท็กใหม่ไปต่อท้ายแท็กเดิม (ไม่ซ้ำกัน)
+            latestMedia.tags = [...new Set([...(latestMedia.tags || []), ...tags])];
+            await latestMedia.save();
+            
+            return client.replyMessage(event.replyToken, {
+              type: 'text',
+              text: `🏷️ บอทจัดการติดแท็ก ${tags.join(', ')} ให้ไฟล์ล่าสุดเรียบร้อยครับ!`
+            });
+          } else {
+            return client.replyMessage(event.replyToken, {
+              type: 'text',
+              text: '🤔 ไม่พบไฟล์ล่าสุดที่ให้ติดแท็กครับ ลองส่งรูปเข้ามาก่อนนะ'
+            });
+          }
+        } catch (err) {
+          console.error("Tagging Error:", err);
+        }
+      }
+    }
+    return Promise.resolve(null);
+  }
+
   if (event.message.type === 'image' || event.message.type === 'file') {
     try {
       const stream = await client.getMessageContent(event.message.id);
