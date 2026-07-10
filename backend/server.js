@@ -112,23 +112,27 @@ async function handleEvent(event) {
       const sysConfig = await SystemConfig.findOne({ key: 'default_config' });
       
       // 🟢 ตรวจสอบสถานะว่าแอดมินเปิด AI ไว้หรือไม่
-      // 🟢 ตรวจสอบสถานะว่าแอดมินเปิด AI ไว้หรือไม่
       if (sysConfig && sysConfig.aiEnabled) {
          try {
-            const mimeType = event.message.type === 'image' ? 'image/jpeg' : 'application/pdf';
-            
-            // 🟢 โหลดชื่อโมเดลจากฐานข้อมูลที่แอดมินตั้งค่าไว้ (ถ้าไม่มีให้ใช้ค่าพื้นฐาน)
-            const modelName = sysConfig.aiModel || "gemini-1.5-flash-latest";
-            const dynamicModel = genAI.getGenerativeModel({ model: modelName });
-
-            const result = await dynamicModel.generateContent([
-              sysConfig.aiPrompt, 
-              { inlineData: { data: buffer.toString("base64"), mimeType } }
-            ]);
-            summary = result.response.text();
+            // 1. ดักจับไฟล์ PDF (ให้ AI อ่านเฉพาะรูปภาพเท่านั้น)
+            if (event.message.type !== 'image') {
+                summary = "🤖 ตอนนี้ AI ของผมรองรับเฉพาะการอ่าน 'รูปภาพ' เท่านั้นครับ รบกวนส่งเป็นรูปมาน้า 😅";
+            } else {
+                // 2. ล้างช่องว่างล่องหน (Trim) ที่อาจแถมมาตอนพิมพ์ในหน้าเว็บ
+                let rawModelName = sysConfig.aiModel ? sysConfig.aiModel.trim() : "gemini-1.5-flash";
+                
+                const mimeType = 'image/jpeg';
+                const dynamicModel = genAI.getGenerativeModel({ model: rawModelName });
+    
+                const result = await dynamicModel.generateContent([
+                  sysConfig.aiPrompt || "ช่วยสรุปข้อความให้หน่อย", 
+                  { inlineData: { data: buffer.toString("base64"), mimeType } }
+                ]);
+                summary = result.response.text();
+            }
          } catch (aiErr) {
             console.error("AI Generation Error:", aiErr);
-            summary = "ไม่สามารถสรุปเนื้อหาได้เนื่องจากข้อผิดพลาดของ AI";
+            summary = "ไม่สามารถสรุปได้ (อาจจะใส่ชื่อโมเดล AI ในตั้งค่าผิด หรือ Google งอแงครับ)";
          }
       }
 
