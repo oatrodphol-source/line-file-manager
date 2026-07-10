@@ -64,6 +64,17 @@ app.put('/api/media/:id', express.json(), async (req, res) => {
   }
 });
 
+// --- 🔴 API สำหรับลบไฟล์ (Delete) ---
+app.delete('/api/media/:id', async (req, res) => {
+  try {
+    const deletedMedia = await Media.findByIdAndDelete(req.params.id);
+    if (!deletedMedia) return res.status(404).json({ error: 'ไม่พบไฟล์ที่ต้องการลบ' });
+    res.json({ message: 'ลบไฟล์สำเร็จเรียบร้อย' });
+  } catch (error) { 
+    res.status(500).json({ error: error.message }); 
+  }
+});
+
 app.get('/api/admin/config', async (req, res) => {
   try {
     let sysConfig = await SystemConfig.findOne({ key: 'default_config' });

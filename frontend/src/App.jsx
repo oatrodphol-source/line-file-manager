@@ -10,15 +10,13 @@ function App() {
   const [aiConfig, setAiConfig] = useState({ aiEnabled: true, aiPrompt: '', aiModel: '' });
   
   const [selectedFile, setSelectedFile] = useState(null);
-  
-  // 🟢 1. เพิ่ม State สำหรับโหมดแก้ไขข้อมูล
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ tags: '', note: '' });
 
   useEffect(() => {
     const initLiff = async () => {
       try {
-        await liff.init({ liffId: "2010664170-y9VzNahZ" }); // 👈 🔴 แก้ไขตรงนี้
+        await liff.init({ liffId: "2010664170-y9VzNahZ" }); // 👈 🔴 อย่าลืมแก้ตรงนี้
         if (liff.isLoggedIn()) {
           const userProfile = await liff.getProfile();
           setProfile(userProfile);
@@ -59,19 +57,14 @@ function App() {
     } catch (err) { alert('❌ เกิดข้อผิดพลาดในการบันทึก'); }
   };
 
-  // 🟢 2. ฟังก์ชันสำหรับบันทึกการแก้ไขข้อมูลไฟล์
   const saveFileDetails = async () => {
     try {
-      // จัดรูปแบบแท็กให้เรียบร้อย (เติม # ให้ถ้าลืมใส่)
       const tagArray = editForm.tags.split(',').map(t => t.trim()).filter(t => t);
       const formattedTags = tagArray.map(tag => tag.startsWith('#') ? tag : `#${tag}`);
-
       const res = await axios.put(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`, {
         tags: formattedTags,
         note: editForm.note
       });
-
-      // อัปเดตข้อมูลบนหน้าจอโดยไม่ต้องรีเฟรชเว็บ
       setMediaFiles(mediaFiles.map(f => f._id === selectedFile._id ? res.data : f));
       setSelectedFile(res.data);
       setIsEditing(false);
@@ -81,13 +74,29 @@ function App() {
     }
   };
 
+  // 🔴 ฟังก์ชันใหม่: สำหรับลบไฟล์
+  const deleteFile = async () => {
+    const isConfirmed = window.confirm('⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบไฟล์นี้?\n(ลบแล้วจะไม่สามารถกู้คืนได้)');
+    if (isConfirmed) {
+      try {
+        await axios.delete(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`);
+        // อัปเดตหน้าจอโดยลบไฟล์นั้นออกจากรายการ
+        setMediaFiles(mediaFiles.filter(f => f._id !== selectedFile._id));
+        setSelectedFile(null); // ปิดหน้าต่าง Modal
+      } catch (err) {
+        alert('❌ เกิดข้อผิดพลาดในการลบไฟล์');
+        console.error(err);
+      }
+    }
+  };
+
   const allTags = [...new Set(mediaFiles.flatMap(file => file.tags || []))];
   const displayedFiles = selectedTag === 'All' ? mediaFiles : mediaFiles.filter(file => file.tags && file.tags.includes(selectedTag));
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
-      {/* หน้าต่าง Modal ดูรูปและแก้ไข */}
+      {/* 🟢 หน้าต่าง Modal (เปิดเมื่อกดคลิกที่ไฟล์) */}
       {selectedFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm">
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]">
@@ -101,17 +110,20 @@ function App() {
                   <a href={selectedFile.fileUrl} target="_blank" rel="noreferrer" className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-xl transition-colors shadow-sm">ดาวน์โหลดไฟล์นี้</a>
                 </div>
               )}
-              <button onClick={() => setSelectedFile(null)} className="absolute top-4 right-4 bg-white text-gray-800 rounded-full w-10 h-10 flex items-center justify-center shadow-md hover:bg-gray-200 transition-all font-bold">✕</button>
+              {/* ปุ่มกลับ/ปิด ชัดเจนขึ้น */}
+              <button onClick={() => { setSelectedFile(null); setIsEditing(false); }} className="absolute top-4 right-4 bg-white text-gray-800 rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-gray-200 hover:scale-110 transition-all font-black text-xl border-2 border-gray-100">✕</button>
             </div>
 
-            {/* 🟢 3. ส่วนแสดงรายละเอียดที่สามารถกด "แก้ไข" ได้ */}
             <div className="w-full md:w-96 p-6 flex flex-col bg-white overflow-y-auto border-l border-gray-100">
               <div className="flex justify-between items-center mb-1">
                 <h3 className="text-xl font-bold text-gray-800">รายละเอียดไฟล์</h3>
                 
-                {/* ปุ่มสลับโหมด แก้ไข/บันทึก */}
+                {/* 🔴 เพิ่มปุ่มลบ ตรงข้ามกับปุ่มแก้ไข */}
                 {!isEditing ? (
-                  <button onClick={() => setIsEditing(true)} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-bold transition-colors shadow-sm">✏️ แก้ไข</button>
+                  <div className="flex gap-2">
+                    <button onClick={deleteFile} className="text-sm bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold transition-colors shadow-sm">🗑️ ลบ</button>
+                    <button onClick={() => setIsEditing(true)} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-bold transition-colors shadow-sm">✏️ แก้ไข</button>
+                  </div>
                 ) : (
                   <div className="flex gap-2">
                     <button onClick={() => setIsEditing(false)} className="text-sm bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold transition-colors">ยกเลิก</button>
@@ -121,17 +133,10 @@ function App() {
               </div>
               <p className="text-xs text-gray-400 mb-6">📅 อัปโหลดเมื่อ: {new Date(selectedFile.createdAt).toLocaleString('th-TH')}</p>
               
-              {/* ช่องแก้ไข Tags */}
               <div className="mb-6">
                 <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">🏷️ หมวดหมู่ (Tags)</p>
                 {isEditing ? (
-                  <input 
-                    type="text" 
-                    className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                    placeholder="คั่นด้วยลูกน้ำ เช่น #work, #doc"
-                    value={editForm.tags}
-                    onChange={(e) => setEditForm({...editForm, tags: e.target.value})}
-                  />
+                  <input type="text" className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="คั่นด้วยลูกน้ำ เช่น #work, #doc" value={editForm.tags} onChange={(e) => setEditForm({...editForm, tags: e.target.value})} />
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {selectedFile.tags && selectedFile.tags.length > 0 ? selectedFile.tags.map((t, i) => (
@@ -141,16 +146,10 @@ function App() {
                 )}
               </div>
 
-              {/* ช่องแก้ไข Note */}
               <div className="flex-1 flex flex-col">
                 <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">📝 Note / ข้อความอธิบาย</p>
                 {isEditing ? (
-                  <textarea 
-                    className="w-full flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none transition-all min-h-[150px]"
-                    placeholder="พิมพ์ข้อความอธิบาย หรือวันที่กำหนดส่งงาน..."
-                    value={editForm.note}
-                    onChange={(e) => setEditForm({...editForm, note: e.target.value})}
-                  ></textarea>
+                  <textarea className="w-full flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none transition-all min-h-[150px]" placeholder="พิมพ์ข้อความอธิบาย หรือวันที่กำหนดส่งงาน..." value={editForm.note} onChange={(e) => setEditForm({...editForm, note: e.target.value})}></textarea>
                 ) : (
                   <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-sm text-gray-700 min-h-[150px] whitespace-pre-wrap leading-relaxed overflow-y-auto">
                     {selectedFile.note || "ไม่มีข้อความโน้ต"}
@@ -158,14 +157,16 @@ function App() {
                 )}
               </div>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* --- โครงสร้าง Sidebar และ Dashboard ปกติ --- */}
+      {/* --- Sidebar ฝั่งจอคอม --- */}
       <div className="w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col hidden md:flex">
-        <div className="p-6"><h2 className="text-2xl font-black text-green-600 tracking-tight">📁 File Manager</h2></div>
+        {/* 🟢 กดที่โลโก้เพื่อกลับหน้าหลัก */}
+        <div className="p-6 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setSelectedTag('All')}>
+          <h2 className="text-2xl font-black text-green-600 tracking-tight">📁 File Manager</h2>
+        </div>
         <ul className="flex-1 px-4 space-y-2 overflow-y-auto">
           <li onClick={() => setSelectedTag('All')} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'All' ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>📥 ทั้งหมด (All)</li>
           {allTags.map((tag, index) => (
@@ -193,12 +194,13 @@ function App() {
 
         {selectedTag !== 'Admin' && (
           <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex overflow-x-auto gap-2 shadow-sm z-0">
-            <button onClick={() => setSelectedTag('All')} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === 'All' ? 'bg-green-500 text-white border-green-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>📥 ทั้งหมด</button>
+            {/* 🟢 ปุ่ม "ทั้งหมด" ในมือถือก็ทำหน้าที่เหมือนปุ่มกลับหน้าหลัก (Home) */}
+            <button onClick={() => setSelectedTag('All')} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === 'All' ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏠 ทั้งหมด</button>
             {allTags.map((tag, index) => (
-              <button key={index} onClick={() => setSelectedTag(tag)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === tag ? 'bg-green-500 text-white border-green-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏷️ {tag}</button>
+              <button key={index} onClick={() => setSelectedTag(tag)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === tag ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏷️ {tag}</button>
             ))}
             {dbUser?.role === 'admin' && (
-              <button onClick={() => setSelectedTag('Admin')} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold transition-colors border ${selectedTag === 'Admin' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-600 border-indigo-200'}`}>⚙️ ตั้งค่า AI</button>
+              <button onClick={() => setSelectedTag('Admin')} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold transition-colors border ${selectedTag === 'Admin' ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm' : 'bg-indigo-50 text-indigo-600 border-indigo-200'}`}>⚙️ ตั้งค่า AI</button>
             )}
           </div>
         )}
@@ -233,7 +235,6 @@ function App() {
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
                 {displayedFiles.map((item) => (
-                  // 🟢 อัปเดตข้อมูลไฟล์และโหลดเข้าฟอร์มเตรียมแก้ไขตอนที่ถูกคลิก
                   <div key={item._id} onClick={() => { setSelectedFile(item); setEditForm({ tags: item.tags ? item.tags.join(', ') : '', note: item.note || '' }); setIsEditing(false); }} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all transform hover:-translate-y-1 group cursor-pointer flex flex-col">
                     {item.fileType === 'image' ? (
                       <div className="h-32 md:h-40 bg-gray-100 relative overflow-hidden">
