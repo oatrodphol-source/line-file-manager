@@ -1,123 +1,130 @@
 require('dotenv').config();
 const express = require('express');
-const axios = require('axios');
+const cors = require('cors');
 const mongoose = require('mongoose');
 const cloudinary = require('cloudinary').v2;
-const cors = require('cors');
+const line = require('@line/bot-sdk');
+
+// นำเข้า Models ที่เราเพิ่งสร้าง
 const Media = require('./models/Media');
+const User = require('./models/User');
 
 const app = express();
+app.use(cors());
 
-app.use(express.json());
-app.use(cors()); 
-
-const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
-
+// ตั้งค่า Cloudinary
 cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// ตั้งค่า LINE
+const config = {
+  channelAccessToken: process.env.LINE_ACCESS_TOKEN,
+  channelSecret: process.env.LINE_CHANNEL_SECRET
+};
+const client = new line.Client(config);
+
+// เชื่อมต่อ MongoDB
 mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('🛢️ Connected to MongoDB Atlas successfully!'))
-    .catch((err) => console.error('❌ MongoDB connection error:', err.message));
+  .then(() => console.log('✅ Connected to MongoDB Atlas successfully!'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
 
-app.get('/', (req, res) => {
-    res.send('🚀 Backend is running!');
+// 🟢 1. API สำหรับบันทึก/อัปเดตข้อมูลผู้ใช้ตอนเปิดหน้าเว็บ
+app.post('/api/users', express.json(), async (req, res) => {
+  try {
+    const { lineId, displayName, pictureUrl } = req.body;
+    // ค้นหาว่ามี User นี้ไหม ถ้ามีให้อัปเดต ถ้าไม่มีให้สร้างใหม่ (upsert)
+    const user = await User.findOneAndUpdate(
+      { lineId: lineId },
+      { displayName, pictureUrl },
+      { new: true, upsert: true }
+    );
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// ประตูส่งข้อมูล: API สำหรับดึงข้อมูลทั้งหมด
+// 🟢 2. API ดึงข้อมูลไฟล์ (กรองตามเจ้าของไฟล์)
 app.get('/api/media', async (req, res) => {
+  try {
+    const userId = req.query.userId; // รับ LINE ID จากหน้าเว็บ
+    let filter = {};
+    if (userId) {
+      filter.ownerId = userId; // กรองเอาเฉพาะไฟล์ของคนนี้
+    }
+    const media = await Media.find(filter).sort({ createdAt: -1 });
+    res.json(media);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🟢 3. Webhook รับข้อความและไฟล์จาก LINE
+app.post('/webhook', line.middleware(config), (req, res) => {
+  Promise
+    .all(req.body.events.map(handleEvent))
+    .then((result) => res.json(result))
+    .catch((err) => {
+      console.error("Webhook Error:", err);
+      res.status(500).end();
+    });
+});
+
+async function handleEvent(event) {
+  if (event.type !== 'message') return Promise.resolve(null);
+
+  const userId = event.source.userId; // 🟢 ดึง LINE ID ของคนที่ส่งข้อความมา
+
+  if (event.message.type === 'image' || event.message.type === 'file') {
     try {
-        const mediaFiles = await Media.find().sort({ createdAt: -1 });
-        res.status(200).json(mediaFiles);
+      const stream = await client.getMessageContent(event.message.id);
+      let chunks = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+      const buffer = Buffer.concat(chunks);
+
+      const uploadResult = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { resource_type: 'auto', folder: 'line_files' },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+        uploadStream.end(buffer);
+      });
+
+      // 🟢 บันทึกข้อมูลลงฐานข้อมูล พร้อมระบุเจ้าของไฟล์ (ownerId)
+      const newMedia = new Media({
+        fileUrl: uploadResult.secure_url,
+        fileType: event.message.type,
+        fileName: event.message.fileName || `file_${Date.now()}`,
+        ownerId: userId // ผูกไฟล์นี้กับคนที่ส่งเข้ามา
+      });
+      await newMedia.save();
+
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: 'บันทึกไฟล์ของคุณเรียบร้อยแล้ว! 🎉'
+      });
+
     } catch (error) {
-        console.error('❌ ดึงข้อมูลล้มเหลว:', error.message);
-        res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูล' });
+      console.error("Upload Error:", error);
+      return client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: 'เกิดข้อผิดพลาดในการบันทึกไฟล์ครับ 🥲'
+      });
     }
-});
+  }
 
-// 🟢 API สำหรับรับ Webhook จาก LINE 
-app.post('/webhook', async (req, res) => {
-    const events = req.body.events;
-
-    if (events && events.length > 0) {
-        for (const event of events) {
-            
-            if (event.type === 'message' && event.message.type === 'text') {
-                const userText = event.message.text;
-                try {
-                    await axios.post('https://api.line.me/v2/bot/message/reply', {
-                        replyToken: event.replyToken,
-                        messages: [{ type: 'text', text: `บอทได้รับข้อความ: "${userText}"` }]
-                    }, { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_ACCESS_TOKEN}` } });
-                } catch (error) { console.error('❌ ตอบกลับข้อความล้มเหลว'); }
-            } 
-            
-            // 2️⃣ 👈 (แก้ไขใหม่) ดักจับทั้ง "image" และ "file"
-            else if (event.type === 'message' && (event.message.type === 'image' || event.message.type === 'file')) {
-                const messageId = event.message.id;
-                const lineUserId = event.source.userId;
-                const msgType = event.message.type; 
-                
-                // ถ้าเป็นไฟล์เอกสาร LINE จะส่งชื่อไฟล์มาให้ด้วย ถ้าเป็นรูปจะให้ชื่อว่า "Image File"
-                const fileName = event.message.fileName || "Image File"; 
-                
-                console.log(`\n📄 เจอ ${msgType}! กำลังดาวน์โหลด ID: ${messageId}`);
-
-                try {
-                    const response = await axios.get(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
-                        headers: { 'Authorization': `Bearer ${LINE_ACCESS_TOKEN}` },
-                        responseType: 'arraybuffer'
-                    });
-                    
-                    const fileBuffer = Buffer.from(response.data, 'binary');
-                    console.log(`☁️ โหลดจาก LINE สำเร็จ กำลังส่งไป Cloudinary...`);
-
-                    const uploadResult = await new Promise((resolve, reject) => {
-                        const uploadStream = cloudinary.uploader.upload_stream(
-                            { 
-                                folder: "line-files",
-                                resource_type: "auto" // 👈 (เพิ่มใหม่) สำคัญมาก! บอกให้ Cloudinary รับไฟล์ได้ทุกประเภท ไม่ใช่แค่รูป
-                            },
-                            (error, result) => {
-                                if (error) reject(error);
-                                else resolve(result);
-                            }
-                        );
-                        uploadStream.end(fileBuffer);
-                    });
-
-                    console.log('✅ อัปโหลดขึ้น Cloudinary สำเร็จ!');
-
-                    // บันทึกข้อมูลลง MongoDB
-                    const newMedia = new Media({
-                        messageId: messageId,
-                        lineUserId: lineUserId,
-                        fileUrl: uploadResult.secure_url,
-                        fileType: msgType, // ใส่ว่าเป็น image หรือ file
-                        fileName: fileName // ใส่ชื่อไฟล์ลงไปด้วย
-                    });
-                    
-                    await newMedia.save();
-                    console.log('💾 บันทึกข้อมูลลงฐานข้อมูล MongoDB สำเร็จ!');
-
-                    await axios.post('https://api.line.me/v2/bot/message/reply', {
-                        replyToken: event.replyToken,
-                        messages: [{ type: 'text', text: `บันทึกไฟล์ [${fileName}] ถาวรสำเร็จ! 🎉\nURL: ${uploadResult.secure_url}` }]
-                    }, { headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LINE_ACCESS_TOKEN}` } });
-
-                } catch (error) {
-                    console.error('❌ เกิดข้อผิดพลาดในระบบ:', error.message);
-                }
-            }
-        }
-    }
-    res.status(200).send('OK');
-});
+  return Promise.resolve(null);
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Server is running on http://localhost:${PORT}`);
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
