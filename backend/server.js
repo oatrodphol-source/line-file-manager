@@ -49,6 +49,21 @@ app.get('/api/media', async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// --- 🟢 API สำหรับอัปเดตข้อมูลไฟล์ (Tag & Note) จากหน้าเว็บ ---
+app.put('/api/media/:id', express.json(), async (req, res) => {
+  try {
+    const { tags, note } = req.body;
+    const updatedMedia = await Media.findByIdAndUpdate(
+      req.params.id,
+      { tags, note },
+      { new: true } // ให้ส่งข้อมูลที่อัปเดตแล้วกลับมา
+    );
+    res.json(updatedMedia);
+  } catch (error) { 
+    res.status(500).json({ error: error.message }); 
+  }
+});
+
 app.get('/api/admin/config', async (req, res) => {
   try {
     let sysConfig = await SystemConfig.findOne({ key: 'default_config' });
