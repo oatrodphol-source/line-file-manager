@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import axios from 'react';
 import axios from 'axios';
 import liff from '@line/liff';
 
@@ -11,19 +12,17 @@ function App() {
   
   const [selectedFile, setSelectedFile] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ tags: '', note: '' });
+  const [editForm, setEditForm] = useState({ tags: '', note: '', folderId: null, fileName: '' });
 
-  // 🟢 State ใหม่สำหรับจัดการระบบ Folder
   const [folders, setFolders] = useState([]);
-  const [currentFolder, setCurrentFolder] = useState(null); // null = อยู่หน้าแรกสุด (Root)
+  const [currentFolder, setCurrentFolder] = useState(null); 
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
-  // 🟢 1. โหลดข้อมูลเริ่มต้น (LIFF)
   useEffect(() => {
     const initLiff = async () => {
       try {
-        await liff.init({ liffId: "2010664170-y9VzNahZ" }); // 👈 🔴 อย่าลืมใส่ LIFF ID ของคุณ
+        await liff.init({ liffId: "2010664170-y9VzNahZ" }); // 👈 🔴 แก้ไขตรงนี้
         if (liff.isLoggedIn()) {
           const userProfile = await liff.getProfile();
           setProfile(userProfile);
@@ -41,7 +40,6 @@ function App() {
     initLiff();
   }, []);
 
-  // 🟢 2. ดึงข้อมูลโฟลเดอร์เมื่อเปลี่ยนหน้า
   useEffect(() => {
     if (dbUser) {
       const parentId = currentFolder ? currentFolder._id : 'null';
@@ -53,7 +51,7 @@ function App() {
     try {
       const response = await axios.get(`https://line-file-manager.onrender.com/api/media?userId=${userId}`);
       setMediaFiles(response.data);
-    } catch (error) { console.error("ดึงข้อมูลไฟล์ไม่สำเร็จ:", error); }
+    } catch (error) { console.error("ดึงข้อมูลไม่สำเร็จ:", error); }
   };
 
   const fetchFolders = async (userId, parentId) => {
@@ -70,7 +68,6 @@ function App() {
     } catch (err) { console.error(err); }
   };
 
-  // 🟢 3. ฟังก์ชันสร้างโฟลเดอร์ใหม่
   const createNewFolder = async () => {
     if (!newFolderName.trim()) return;
     try {
@@ -79,13 +76,12 @@ function App() {
         ownerId: dbUser.lineId,
         parentId: currentFolder ? currentFolder._id : null
       });
-      setFolders([res.data, ...folders]); // เพิ่มโฟลเดอร์ใหม่ลงในจอทันที
+      setFolders([res.data, ...folders]);
       setNewFolderName('');
       setShowNewFolderInput(false);
     } catch (error) { alert('❌ เกิดข้อผิดพลาดในการสร้างแฟ้ม'); }
   };
 
-  // --- ฟังก์ชันของเดิม (ปลอดภัย 100%) ---
   const saveConfig = async () => {
     try {
       await axios.post('https://line-file-manager.onrender.com/api/admin/config', { userId: dbUser.lineId, ...aiConfig });
@@ -97,7 +93,12 @@ function App() {
     try {
       const tagArray = editForm.tags.split(',').map(t => t.trim()).filter(t => t);
       const formattedTags = tagArray.map(tag => tag.startsWith('#') ? tag : `#${tag}`);
-      const res = await axios.put(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`, { tags: formattedTags, note: editForm.note });
+      const res = await axios.put(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`, { 
+        tags: formattedTags, 
+        note: editForm.note,
+        folderId: editForm.folderId,
+        fileName: editForm.fileName 
+      });
       setMediaFiles(mediaFiles.map(f => f._id === selectedFile._id ? res.data : f));
       setSelectedFile(res.data);
       setIsEditing(false);
@@ -134,10 +135,9 @@ function App() {
     }
   };
 
-  // 🟢 กรองไฟล์ให้ตรงกับโฟลเดอร์ปัจจุบัน และตรงกับ Tag
   const currentFolderFiles = mediaFiles.filter(file => {
-    if (!currentFolder) return !file.folderId; // ถ้าอยู่หน้าแรก ให้โชว์เฉพาะไฟล์ที่ไม่มีโฟลเดอร์
-    return file.folderId === currentFolder._id; // ถ้าเข้าโฟลเดอร์ โชว์เฉพาะไฟล์ในนั้น
+    if (!currentFolder) return !file.folderId;
+    return file.folderId === currentFolder._id;
   });
   
   const allTags = [...new Set(mediaFiles.flatMap(file => file.tags || []))];
@@ -146,10 +146,11 @@ function App() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
-      {/* --- ส่วน Modal (ปลอดภัย คงเดิม) --- */}
+      {/* หน้าต่าง Modal ดูรูปและแก้ไขรายละเอียด */}
       {selectedFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm">
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]">
+            
             <div className="flex-1 bg-gray-100 flex items-center justify-center relative min-h-[300px] group">
               {selectedFile.fileType === 'image' ? (
                 <>
@@ -170,7 +171,7 @@ function App() {
             </div>
 
             <div className="w-full md:w-96 p-6 flex flex-col bg-white overflow-y-auto border-l border-gray-100">
-              <div className="flex justify-between items-center mb-1">
+              <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-gray-800">รายละเอียดไฟล์</h3>
                 {!isEditing ? (
                   <div className="flex gap-2">
@@ -184,25 +185,47 @@ function App() {
                   </div>
                 )}
               </div>
-              <p className="text-xs text-gray-400 mb-6">📅 อัปโหลดเมื่อ: {new Date(selectedFile.createdAt).toLocaleString('th-TH')}</p>
-              
-              <div className="mb-6">
-                <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">🏷️ หมวดหมู่ (Tags)</p>
+
+              <div className="mb-4">
                 {isEditing ? (
-                  <input type="text" className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="คั่นด้วยลูกน้ำ เช่น #work, #doc" value={editForm.tags} onChange={(e) => setEditForm({...editForm, tags: e.target.value})} />
+                   <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm font-bold focus:ring-2 focus:ring-green-500 outline-none mb-1" value={editForm.fileName || ''} onChange={(e) => setEditForm({...editForm, fileName: e.target.value})} />
+                ) : (
+                   <p className="text-sm font-bold text-gray-700 mb-1">{selectedFile.fileName || 'ไม่ได้ตั้งชื่อไฟล์'}</p>
+                )}
+                <p className="text-xs text-gray-400">📅 อัปโหลดเมื่อ: {new Date(selectedFile.createdAt).toLocaleString('th-TH')}</p>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📁 ย้ายไปที่แฟ้ม</p>
+                {isEditing ? (
+                  <select className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 outline-none" value={editForm.folderId || 'null'} onChange={(e) => setEditForm({...editForm, folderId: e.target.value === 'null' ? null : e.target.value})}>
+                    <option value="null">🏠 หน้าแรกสุด (ไม่ใส่แฟ้ม)</option>
+                    {folders.map(f => <option key={f._id} value={f._id}>📂 {f.name}</option>)}
+                  </select>
+                ) : (
+                  <div className="bg-gray-50 text-gray-600 text-sm px-3 py-2 rounded-lg border border-gray-200">
+                    {folders.find(f => f._id === selectedFile.folderId)?.name ? `📂 ${folders.find(f => f._id === selectedFile.folderId).name}` : '🏠 อยู่ในหน้าแรกสุด'}
+                  </div>
+                )}
+              </div>
+              
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">🏷️ หมวดหมู่ (Tags)</p>
+                {isEditing ? (
+                  <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="#work, #doc" value={editForm.tags} onChange={(e) => setEditForm({...editForm, tags: e.target.value})} />
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {selectedFile.tags && selectedFile.tags.length > 0 ? selectedFile.tags.map((t, i) => <span key={i} className="bg-indigo-50 text-indigo-600 text-xs px-3 py-1.5 rounded-lg font-medium border border-indigo-100">{t}</span>) : <span className="text-sm text-gray-400 italic">ไม่ได้ระบุหมวดหมู่</span>}
+                    {selectedFile.tags && selectedFile.tags.length > 0 ? selectedFile.tags.map((t, i) => <span key={i} className="bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-md font-medium border border-indigo-100">{t}</span>) : <span className="text-xs text-gray-400 italic">-</span>}
                   </div>
                 )}
               </div>
 
               <div className="flex-1 flex flex-col">
-                <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">📝 Note / ข้อความอธิบาย</p>
+                <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📝 Note / ข้อความอธิบาย</p>
                 {isEditing ? (
-                  <textarea className="w-full flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none transition-all min-h-[150px]" placeholder="พิมพ์ข้อความอธิบาย..." value={editForm.note} onChange={(e) => setEditForm({...editForm, note: e.target.value})}></textarea>
+                  <textarea className="w-full flex-1 p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none transition-all min-h-[120px]" placeholder="พิมพ์ข้อความอธิบาย..." value={editForm.note} onChange={(e) => setEditForm({...editForm, note: e.target.value})}></textarea>
                 ) : (
-                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-sm text-gray-700 min-h-[150px] whitespace-pre-wrap leading-relaxed overflow-y-auto">{selectedFile.note || "ไม่มีข้อความโน้ต"}</div>
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 min-h-[120px] whitespace-pre-wrap overflow-y-auto">{selectedFile.note || "-"}</div>
                 )}
               </div>
             </div>
@@ -210,15 +233,15 @@ function App() {
         </div>
       )}
 
-      {/* --- Sidebar ด้านซ้าย --- */}
+      {/* Sidebar สำหรับคอม */}
       <div className="w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col hidden md:flex">
         <div className="p-6 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => { setSelectedTag('All'); setCurrentFolder(null); }}>
           <h2 className="text-2xl font-black text-green-600 tracking-tight">📁 File Manager</h2>
         </div>
         <ul className="flex-1 px-4 space-y-2 overflow-y-auto">
-          <li onClick={() => setSelectedTag('All')} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'All' ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>📥 ทั้งหมด (All)</li>
+          <li onClick={() => { setSelectedTag('All'); setCurrentFolder(null); }} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'All' && !currentFolder ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>📥 ทั้งหมด (All)</li>
           {allTags.map((tag, index) => (
-            <li key={index} onClick={() => setSelectedTag(tag)} className={`p-3 rounded-xl font-medium cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === tag ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>🏷️ {tag}</li>
+            <li key={index} onClick={() => { setSelectedTag(tag); setCurrentFolder(null); }} className={`p-3 rounded-xl font-medium cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === tag ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>🏷️ {tag}</li>
           ))}
           {dbUser?.role === 'admin' && (
             <>
@@ -231,8 +254,6 @@ function App() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm z-10">
-          
-          {/* 🟢 อัปเกรด Header แสดงทางเดิน (Breadcrumb) ว่าอยู่โฟลเดอร์ไหน */}
           <h1 className="text-lg md:text-xl font-bold text-gray-800 ml-2 md:ml-0 flex items-center gap-2">
             {selectedTag === 'Admin' ? '⚙️ Admin Panel' : (
               <>
@@ -246,7 +267,6 @@ function App() {
               </>
             )}
           </h1>
-
           {profile && (
             <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-gray-200">
               <span className="text-sm font-semibold text-gray-700 hidden sm:block">{profile.displayName}</span>
@@ -257,9 +277,9 @@ function App() {
 
         {selectedTag !== 'Admin' && (
           <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex overflow-x-auto gap-2 shadow-sm z-0">
-            <button onClick={() => { setSelectedTag('All'); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === 'All' ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏠 ทั้งหมด</button>
+            <button onClick={() => { setSelectedTag('All'); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === 'All' && !currentFolder ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏠 ทั้งหมด</button>
             {allTags.map((tag, index) => (
-              <button key={index} onClick={() => setSelectedTag(tag)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === tag ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏷️ {tag}</button>
+              <button key={index} onClick={() => { setSelectedTag(tag); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${selectedTag === tag ? 'bg-green-500 text-white border-green-500 shadow-sm' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>🏷️ {tag}</button>
             ))}
             {dbUser?.role === 'admin' && (
               <button onClick={() => setSelectedTag('Admin')} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold transition-colors border ${selectedTag === 'Admin' ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm' : 'bg-indigo-50 text-indigo-600 border-indigo-200'}`}>⚙️ ตั้งค่า AI</button>
@@ -269,7 +289,6 @@ function App() {
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50">
           {selectedTag === 'Admin' ? (
-            // ส่วน Admin Panel (คงเดิม)
             <div className="max-w-2xl mx-auto bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
               <h2 className="text-2xl font-bold text-gray-800 mb-6">⚙️ ควบคุมระบบผู้ช่วย AI</h2>
               <div className="mb-6 flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
@@ -291,26 +310,22 @@ function App() {
             </div>
           ) : (
             <>
-              {/* 🟢 ส่วนแสดงโฟลเดอร์แบบ Google Drive */}
+              {/* ส่วนแสดงโฟลเดอร์ */}
               {selectedTag !== 'Admin' && (
                 <div className="mb-8">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="text-sm font-bold text-gray-500">📁 โฟลเดอร์ ({folders.length})</h3>
-                    <button onClick={() => setShowNewFolderInput(!showNewFolderInput)} className="text-xs bg-green-100 text-green-700 px-4 py-2 rounded-lg font-bold hover:bg-green-200 transition-colors shadow-sm">
-                      + สร้างแฟ้มใหม่
-                    </button>
+                    <button onClick={() => setShowNewFolderInput(!showNewFolderInput)} className="text-xs bg-green-100 text-green-700 px-4 py-2 rounded-lg font-bold hover:bg-green-200 transition-colors shadow-sm">+ สร้างแฟ้มใหม่</button>
                   </div>
                   
-                  {/* ฟอร์มสร้างโฟลเดอร์ */}
                   {showNewFolderInput && (
-                    <div className="flex gap-2 mb-4 bg-white p-3 rounded-xl border border-green-200 shadow-sm max-w-md animate-fade-in">
+                    <div className="flex gap-2 mb-4 bg-white p-3 rounded-xl border border-green-200 shadow-sm max-w-md">
                       <input type="text" autoFocus value={newFolderName} onChange={(e)=>setNewFolderName(e.target.value)} placeholder="พิมพ์ชื่อแฟ้มใหม่..." className="flex-1 outline-none text-sm bg-transparent" />
-                      <button onClick={createNewFolder} className="bg-green-500 hover:bg-green-600 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-colors">สร้าง</button>
-                      <button onClick={() => setShowNewFolderInput(false)} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-4 py-1.5 rounded-lg text-sm font-bold transition-colors">ยกเลิก</button>
+                      <button onClick={createNewFolder} className="bg-green-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold">สร้าง</button>
+                      <button onClick={() => setShowNewFolderInput(false)} className="bg-gray-100 text-gray-600 px-4 py-1.5 rounded-lg text-sm font-bold">ยกเลิก</button>
                     </div>
                   )}
 
-                  {/* Grid โฟลเดอร์ */}
                   {folders.length > 0 && (
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
                       {folders.map(folder => (
@@ -321,20 +336,18 @@ function App() {
                       ))}
                     </div>
                   )}
-                  {folders.length === 0 && !showNewFolderInput && (
-                     <p className="text-xs text-gray-400 italic">ยังไม่มีโฟลเดอร์ในหน้านี้</p>
-                  )}
+                  {folders.length === 0 && !showNewFolderInput && <p className="text-xs text-gray-400 italic">ยังไม่มีโฟลเดอร์ในหน้านี้</p>}
                 </div>
               )}
 
-              {/* ส่วนแสดงไฟล์ (แบบเดิมที่กรองตามโฟลเดอร์แล้ว) */}
+              {/* ส่วนแสดงไฟล์ (🟢 จุดที่ 3: อัปเดต click handler เรียบร้อยแล้ว) */}
               <h3 className="text-sm font-bold text-gray-500 mb-4 border-t border-gray-200 pt-6">📄 ไฟล์เอกสารและรูปภาพ ({displayedFiles.length})</h3>
               {displayedFiles.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-gray-400"><span className="text-6xl mb-4">📭</span><p>ไม่มีไฟล์ในพื้นที่นี้</p></div>
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
                   {displayedFiles.map((item) => (
-                    <div key={item._id} onClick={() => { setSelectedFile(item); setEditForm({ tags: item.tags ? item.tags.join(', ') : '', note: item.note || '' }); setIsEditing(false); }} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all transform hover:-translate-y-1 group cursor-pointer flex flex-col">
+                    <div key={item._id} onClick={() => { setSelectedFile(item); setEditForm({ tags: item.tags ? item.tags.join(', ') : '', note: item.note || '', folderId: item.folderId || null, fileName: item.fileName || '' }); setIsEditing(false); }} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all transform hover:-translate-y-1 group cursor-pointer flex flex-col">
                       {item.fileType === 'image' ? (
                         <div className="h-32 md:h-40 bg-gray-100 relative overflow-hidden">
                           <img src={item.fileUrl} alt="upload" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />

@@ -51,13 +51,20 @@ app.get('/api/media', async (req, res) => {
 });
 
 // --- 🟢 API สำหรับอัปเดตข้อมูลไฟล์ (Tag & Note) จากหน้าเว็บ ---
+// --- 🟢 API สำหรับอัปเดตข้อมูลไฟล์ (Tag, Note, ชื่อไฟล์, ย้ายโฟลเดอร์) ---
 app.put('/api/media/:id', express.json(), async (req, res) => {
   try {
-    const { tags, note } = req.body;
+    const { tags, note, folderId, fileName } = req.body; // 👈 🟢 เพิ่ม folderId และ fileName
+    
     const updatedMedia = await Media.findByIdAndUpdate(
       req.params.id,
-      { tags, note },
-      { new: true } // ให้ส่งข้อมูลที่อัปเดตแล้วกลับมา
+      { 
+        tags, 
+        note, 
+        folderId: folderId || null, // ถ้าไม่มีค่าให้เป็น null (อยู่หน้าแรก)
+        fileName 
+      },
+      { new: true }
     );
     res.json(updatedMedia);
   } catch (error) { 
