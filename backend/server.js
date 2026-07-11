@@ -10,7 +10,8 @@ const Media = require('./models/Media');
 const User = require('./models/User');
 const SystemConfig = require('./models/SystemConfig');
 const Folder = require('./models/Folder'); // 🟢 เพิ่มการเรียกใช้โมเดลโฟลเดอร์
-
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() }); // ให้เก็บไฟล์ในหน่วยความจำชั่วคราวก่อนส่งขึ้น Cloud
 const app = express();
 app.use(cors());
 
@@ -246,4 +247,36 @@ async function handleEvent(event) {
 }
 
 const PORT = process.env.PORT || 3000;
+// --- 🟢 API สำหรับอัปโหลดไฟล์ผ่านหน้าเว็บโดยตรง ---
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'ไม่พบไฟล์ที่อัปโหลด' });
+
+    const { ownerId, folderId } = req.body;
+    
+    // ส่งไฟล์ขึ้น Cloudinary
+    const stream = cloudinary.uploader.upload_stream(
+      { resource_type: 'auto' }, // รับทั้งรูปภาพและ PDF
+      async (error, result) => {
+        if (error) return res.status(500).json({ error });
+
+        // บันทึกข้อมูลลง MongoDB
+        const newMedia = new Media({
+          fileUrl: result.secure_url,
+          fileType: result.resource_type === 'image' ? 'image' : 'document',
+          fileName: req.file.originalname,
+          ownerId: ownerId,
+          sourceType: 'web',
+          folderId: folderId === 'null' || !folderId ? null : folderId
+        });
+        await newMedia.save();
+        res.status(201).json(newMedia);
+      }
+    );
+    
+    stream.end(req.file.buffer); // เริ่มการอัปโหลด
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));

@@ -18,6 +18,9 @@ function App() {
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
+  // 🟢 State สำหรับแสดงสถานะตอนกำลังอัปโหลดไฟล์
+  const [isUploading, setIsUploading] = useState(false);
+
   useEffect(() => {
     const initLiff = async () => {
       try {
@@ -79,6 +82,31 @@ function App() {
       setNewFolderName('');
       setShowNewFolderInput(false);
     } catch (error) { alert('❌ เกิดข้อผิดพลาดในการสร้างแฟ้ม'); }
+  };
+
+  // 🟢 ฟังก์ชันอัปโหลดไฟล์ผ่านหน้าเว็บ
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('ownerId', dbUser.lineId);
+    if (currentFolder) formData.append('folderId', currentFolder._id);
+
+    try {
+      const res = await axios.post('https://line-file-manager.onrender.com/api/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setMediaFiles([res.data, ...mediaFiles]); // เพิ่มไฟล์ใหม่เข้าจอทันที
+      alert('✅ อัปโหลดไฟล์สำเร็จ!');
+    } catch (err) {
+      alert('❌ เกิดข้อผิดพลาดในการอัปโหลด');
+      console.error(err);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const saveConfig = async () => {
@@ -145,11 +173,10 @@ function App() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
-      {/* หน้าต่าง Modal ดูรูปและแก้ไขรายละเอียด */}
+      {/* Modal ดูไฟล์ (คงเดิม) */}
       {selectedFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm">
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]">
-            
             <div className="flex-1 bg-gray-100 flex items-center justify-center relative min-h-[300px] group">
               {selectedFile.fileType === 'image' ? (
                 <>
@@ -232,7 +259,7 @@ function App() {
         </div>
       )}
 
-      {/* Sidebar สำหรับคอม */}
+      {/* Sidebar */}
       <div className="w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col hidden md:flex">
         <div className="p-6 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => { setSelectedTag('All'); setCurrentFolder(null); }}>
           <h2 className="text-2xl font-black text-green-600 tracking-tight">📁 File Manager</h2>
@@ -309,12 +336,24 @@ function App() {
             </div>
           ) : (
             <>
-              {/* ส่วนแสดงโฟลเดอร์ */}
+              {/* ส่วนแสดงโฟลเดอร์ และ ปุ่มอัปโหลด */}
               {selectedTag !== 'Admin' && (
                 <div className="mb-8">
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
                     <h3 className="text-sm font-bold text-gray-500">📁 โฟลเดอร์ ({folders.length})</h3>
-                    <button onClick={() => setShowNewFolderInput(!showNewFolderInput)} className="text-xs bg-green-100 text-green-700 px-4 py-2 rounded-lg font-bold hover:bg-green-200 transition-colors shadow-sm">+ สร้างแฟ้มใหม่</button>
+                    
+                    {/* 🟢 กลุ่มปุ่มจัดการแฟ้มและไฟล์ */}
+                    <div className="flex gap-2">
+                      {/* ปุ่มอัปโหลดไฟล์ (ซ่อน input ไว้ แล้วใช้ label ครอบแทนปุ่ม) */}
+                      <label className="text-xs bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-bold hover:bg-indigo-200 transition-colors shadow-sm cursor-pointer flex items-center gap-1">
+                        {isUploading ? '⏳ กำลังอัปโหลด...' : '☁️ อัปโหลดไฟล์'}
+                        <input type="file" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                      </label>
+                      
+                      <button onClick={() => setShowNewFolderInput(!showNewFolderInput)} className="text-xs bg-green-100 text-green-700 px-4 py-2 rounded-lg font-bold hover:bg-green-200 transition-colors shadow-sm">
+                        + สร้างแฟ้มใหม่
+                      </button>
+                    </div>
                   </div>
                   
                   {showNewFolderInput && (
@@ -339,7 +378,7 @@ function App() {
                 </div>
               )}
 
-              {/* ส่วนแสดงไฟล์ (🟢 จุดที่ 3: อัปเดต click handler เรียบร้อยแล้ว) */}
+              {/* ส่วนแสดงไฟล์ */}
               <h3 className="text-sm font-bold text-gray-500 mb-4 border-t border-gray-200 pt-6">📄 ไฟล์เอกสารและรูปภาพ ({displayedFiles.length})</h3>
               {displayedFiles.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-gray-400"><span className="text-6xl mb-4">📭</span><p>ไม่มีไฟล์ในพื้นที่นี้</p></div>
