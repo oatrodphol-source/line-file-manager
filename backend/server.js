@@ -9,6 +9,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Media = require('./models/Media');
 const User = require('./models/User');
 const SystemConfig = require('./models/SystemConfig');
+const Folder = require('./models/Folder'); // 🟢 เพิ่มการเรียกใช้โมเดลโฟลเดอร์
 
 const app = express();
 app.use(cors());
@@ -72,6 +73,46 @@ app.delete('/api/media/:id', async (req, res) => {
     res.json({ message: 'ลบไฟล์สำเร็จเรียบร้อย' });
   } catch (error) { 
     res.status(500).json({ error: error.message }); 
+  }
+});
+
+// ==========================================
+// 📁 หมวดหมู่ API สำหรับจัดการระบบโฟลเดอร์ (Phase 1)
+// ==========================================
+
+// 1. API สร้างโฟลเดอร์ใหม่
+app.post('/api/folders', express.json(), async (req, res) => {
+  try {
+    const { name, ownerId, parentId } = req.body;
+    const newFolder = new Folder({ 
+      name, 
+      ownerId, 
+      parentId: parentId || null // ถ้าไม่ได้ระบุ parentId แปลว่าสร้างไว้หน้าแรกสุด
+    });
+    await newFolder.save();
+    res.status(201).json(newFolder);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. API ดึงรายการโฟลเดอร์ของผู้ใช้
+app.get('/api/folders', async (req, res) => {
+  try {
+    const { userId, parentId } = req.query;
+    
+    // ค้นหาโฟลเดอร์ที่เป็นของผู้ใช้คนนี้
+    let filter = { ownerId: userId };
+    
+    // เลือกระดับชั้นของโฟลเดอร์ (ถ้าส่ง parentId แปลว่าดึงโฟลเดอร์ย่อยข้างใน)
+    if (parentId !== undefined) {
+      filter.parentId = parentId === 'null' ? null : parentId;
+    }
+
+    const folders = await Folder.find(filter).sort({ createdAt: -1 });
+    res.json(folders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
