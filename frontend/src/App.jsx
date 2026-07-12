@@ -31,8 +31,11 @@ function App() {
   const [showEventModal, setShowEventModal] = useState(false);
   const [newEvent, setNewEvent] = useState({ _id: null, title: '', date: new Date().toISOString().split('T')[0], isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' });
 
-  // 🟢 State ใหม่สำหรับเก็บข้อมูล Audit Logs (Phase 2)
   const [auditLogs, setAuditLogs] = useState([]);
+  
+  // 🟢 State ใหม่สำหรับระบบ Broadcast (Phase 5)
+  const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
 
   useEffect(() => {
     const initLiff = async () => {
@@ -42,8 +45,7 @@ function App() {
           const userProfile = await liff.getProfile();
           setProfile(userProfile);
           const res = await axios.post('https://line-file-manager.onrender.com/api/users', { lineId: userProfile.userId, displayName: userProfile.displayName, pictureUrl: userProfile.pictureUrl });
-          setDbUser(res.data); fetchMedia(userProfile.userId); fetchEvents(userProfile.userId);
-          fetchAuditLogs(userProfile.userId); // โหลดประวัติการใช้งานบันทึกระบบ
+          setDbUser(res.data); fetchMedia(userProfile.userId); fetchEvents(userProfile.userId); fetchAuditLogs(userProfile.userId);
           if (res.data.role === 'admin') fetchConfig();
         }
       } catch (err) { console.error("Error:", err); }
@@ -51,19 +53,13 @@ function App() {
     initLiff();
   }, []);
 
-  useEffect(() => {
-    if (dbUser) { fetchFolders(dbUser.lineId, currentFolder ? currentFolder._id : 'null'); }
-  }, [currentFolder, dbUser]);
+  useEffect(() => { if (dbUser) fetchFolders(dbUser.lineId, currentFolder ? currentFolder._id : 'null'); }, [currentFolder, dbUser]);
 
   const fetchMedia = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/media?userId=${userId}`); setMediaFiles(res.data); } catch (e) {} };
   const fetchFolders = async (userId, parentId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/folders?userId=${userId}&parentId=${parentId}`); setFolders(res.data); } catch (e) {} };
   const fetchEvents = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/events?userId=${userId}`); setEvents(res.data); } catch (e) {} };
   const fetchConfig = async () => { try { const res = await axios.get('https://line-file-manager.onrender.com/api/admin/config'); if (res.data) setAiConfig(res.data); } catch (e) {} };
-  
-  // 🟢 ดึงบันทึกประวัติจากหลังบ้าน
-  const fetchAuditLogs = async (userId) => {
-    try { const res = await axios.get(`https://line-file-manager.onrender.com/api/audit-logs?userId=${userId}`); setAuditLogs(res.data); } catch (e) {}
-  };
+  const fetchAuditLogs = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/audit-logs?userId=${userId}`); setAuditLogs(res.data); } catch (e) {} };
 
   const createNewFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -71,12 +67,10 @@ function App() {
   };
   const handleRenameFolder = async () => {
     if (!editFolderName.trim()) return;
-    try { const res = await axios.put(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`, { name: editFolderName }); setCurrentFolder(res.data); setIsEditingFolder(false); } catch (e) {}
+    try { const res = await axios.put(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`, { name: editFolderName }); setCurrentFolder(res.data); setIsEditingFolder(false); fetchAuditLogs(dbUser.lineId); } catch (e) {}
   };
   const handleDeleteFolder = async () => {
-    if (window.confirm('⚠️ ลบโฟลเดอร์นี้?\n(ไฟล์ข้างในจะไม่หาย แต่จะถูกย้ายไปหน้าแรก)')) {
-      try { await axios.delete(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`); setCurrentFolder(null); setIsEditingFolder(false); fetchMedia(dbUser.lineId); fetchAuditLogs(dbUser.lineId); } catch (e) {}
-    }
+    if (window.confirm('⚠️ ลบโฟลเดอร์นี้?\n(ไฟล์ข้างในจะไม่หาย แต่จะถูกย้ายไปหน้าแรก)')) { try { await axios.delete(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`); setCurrentFolder(null); setIsEditingFolder(false); fetchMedia(dbUser.lineId); fetchAuditLogs(dbUser.lineId); } catch (e) {} }
   };
 
   const handleSaveEvent = async () => {
@@ -89,14 +83,33 @@ function App() {
         const res = await axios.post('https://line-file-manager.onrender.com/api/events', { ...newEvent, ownerId: dbUser.lineId });
         setEvents([...events, res.data]);
       }
-      setShowEventModal(false);
-      setNewEvent({ _id: null, title: '', date: selectedDate.toISOString().split('T')[0], isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' });
+      setShowEventModal(false); setNewEvent({ _id: null, title: '', date: selectedDate.toISOString().split('T')[0], isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' }); fetchAuditLogs(dbUser.lineId);
     } catch (error) { alert("เกิดข้อผิดพลาด"); }
   };
-  const handleDeleteEvent = async (id) => {
-    if(window.confirm("ลบกิจกรรมนี้?")) { await axios.delete(`https://line-file-manager.onrender.com/api/events/${id}`); setEvents(events.filter(e => e._id !== id)); setShowEventModal(false); }
-  };
+  const handleDeleteEvent = async (id) => { if(window.confirm("ลบกิจกรรมนี้?")) { await axios.delete(`https://line-file-manager.onrender.com/api/events/${id}`); setEvents(events.filter(e => e._id !== id)); setShowEventModal(false); fetchAuditLogs(dbUser.lineId); } };
   const openEditEventModal = (ev) => { setNewEvent(ev); setShowEventModal(true); };
+
+  // 🟢 ฟังก์ชันส่งการแจ้งเตือนกิจกรรมผ่าน LINE บอท (Phase 5)
+  const handleNotifyEventLINE = async () => {
+    if (!newEvent._id) return;
+    try {
+      await axios.post('https://line-file-manager.onrender.com/api/notify/event', { eventTitle: newEvent.title, eventDate: newEvent.date, userId: dbUser.lineId });
+      alert("🔔 ส่งการแจ้งเตือนลง LINE ของคุณเรียบร้อยแล้ว!");
+      fetchAuditLogs(dbUser.lineId);
+    } catch (e) { alert("❌ ส่งแจ้งเตือนไม่สำเร็จ"); }
+  };
+
+  // 🟢 ฟังก์ชัน Broadcast ข้อความ (Phase 5)
+  const handleBroadcast = async () => {
+    if (!broadcastMsg.trim()) return alert("กรุณาพิมพ์ข้อความ");
+    if (!window.confirm("📢 ยืนยันการส่งประกาศหาทุกคนในระบบ?")) return;
+    setIsBroadcasting(true);
+    try {
+      await axios.post('https://line-file-manager.onrender.com/api/admin/broadcast', { message: broadcastMsg, adminId: dbUser.lineId });
+      alert("✅ ส่งประกาศสำเร็จ!");
+      setBroadcastMsg(''); fetchAuditLogs(dbUser.lineId);
+    } catch (e) { alert("❌ บรอดแคสต์ล้มเหลว"); } finally { setIsBroadcasting(false); }
+  };
 
   const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
@@ -107,17 +120,11 @@ function App() {
 
   const handleShareFile = (fileUrl) => { navigator.clipboard.writeText(fileUrl); alert("📋 ก๊อปลิงก์สำเร็จ!"); };
   
-  // อัปโหลดไฟล์พร้อมแนบชื่อผู้ใช้งานไปบันทึก Log หลังบ้าน
   const handleFileUpload = async (event) => {
     const file = event.target.files[0]; if (!file) return; setIsUploading(true);
     const formData = new FormData(); formData.append('file', file); formData.append('ownerId', dbUser.lineId); formData.append('userName', profile.displayName);
     if (currentFolder) formData.append('folderId', currentFolder._id);
-    try { 
-      const res = await axios.post('https://line-file-manager.onrender.com/api/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }}); 
-      fetchMedia(dbUser.lineId);
-      alert('✅ จัดการอัปโหลดไฟล์สำเร็จ!');
-      fetchAuditLogs(dbUser.lineId);
-    } catch (err) {} finally { setIsUploading(false); }
+    try { const res = await axios.post('https://line-file-manager.onrender.com/api/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }}); fetchMedia(dbUser.lineId); alert('✅ จัดการอัปโหลดไฟล์สำเร็จ!'); fetchAuditLogs(dbUser.lineId); } catch (err) {} finally { setIsUploading(false); }
   };
   
   const saveFileDetails = async () => {
@@ -158,7 +165,7 @@ function App() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
-      {/* Modal ปฏิทิน (คงเดิม) */}
+      {/* Modal ปฏิทิน (เพิ่มปุ่มแจ้งเตือน LINE) */}
       {showEventModal && (
         <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black bg-opacity-60 transition-opacity backdrop-blur-sm">
           <div className="bg-[#1c1c1e] md:bg-white md:text-black text-white w-full md:max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden animate-slide-up">
@@ -171,13 +178,20 @@ function App() {
                 {!newEvent.isAllDay && (<div className="border-t border-gray-700 md:border-gray-200 pt-4 flex justify-between items-center gap-4"><div className="flex flex-col w-1/2"><span className="text-xs text-gray-400">เริ่ม</span><input type="time" className="bg-transparent text-white md:text-black outline-none" value={newEvent.startTime} onChange={e => setNewEvent({...newEvent, startTime: e.target.value})} /></div><div className="flex flex-col w-1/2"><span className="text-xs text-gray-400">สิ้นสุด</span><input type="time" className="bg-transparent text-white md:text-black outline-none" value={newEvent.endTime} onChange={e => setNewEvent({...newEvent, endTime: e.target.value})} /></div></div>)}
               </div>
               <div className="bg-[#2c2c2e] md:bg-gray-50 rounded-xl overflow-hidden"><textarea placeholder="เพิ่มโน้ต..." className="w-full bg-transparent p-4 outline-none text-white md:text-black text-sm resize-none min-h-[100px]" value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})}></textarea></div>
-              {newEvent._id && (<button onClick={() => handleDeleteEvent(newEvent._id)} className="w-full mt-4 bg-red-900 bg-opacity-30 md:bg-red-50 text-red-500 py-3 rounded-xl font-bold">🗑️ ลบกิจกรรมนี้</button>)}
+              
+              {/* 🟢 ปุ่มพิเศษสำหรับ Phase 5 */}
+              {newEvent._id && (
+                 <div className="flex gap-2 mt-4">
+                    <button onClick={handleNotifyEventLINE} className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">🔔 แจ้งเตือนลง LINE</button>
+                    <button onClick={() => handleDeleteEvent(newEvent._id)} className="w-16 bg-red-900 bg-opacity-30 md:bg-red-50 text-red-500 rounded-xl flex items-center justify-center text-xl">🗑️</button>
+                 </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal ดูไฟล์และแก้ไขรายละเอียด */}
+      {/* Modal ดูไฟล์และแก้ไขรายละเอียด (คงเดิม) */}
       {selectedFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm">
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]">
@@ -200,28 +214,16 @@ function App() {
               <div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">🏷️ แท็ก</p>{isEditing ? <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none" value={editForm.tags} onChange={(e) => setEditForm({...editForm, tags: e.target.value})} /> : <div className="flex flex-wrap gap-2">{selectedFile.tags?.map((t, i) => <span key={i} className="bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-md font-medium border border-indigo-100">{t}</span>)}</div>}</div>
               <div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📝 โน้ต</p>{isEditing ? <textarea className="w-full flex-1 p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none min-h-[80px]" value={editForm.note} onChange={(e) => setEditForm({...editForm, note: e.target.value})}></textarea> : <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 min-h-[80px] whitespace-pre-wrap overflow-y-auto">{selectedFile.note || "-"}</div>}</div>
               
-              {/* 🟢 ส่วนเติมเต็ม Phase 4: คลังประวัติเวอร์ชันเก่า (File Version History) */}
               {!isEditing && selectedFile.versions && selectedFile.versions.length > 0 && (
-                 <div className="mb-4 border-t border-gray-200 pt-4">
-                   <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">⏳ เวอร์ชันย้อนหลัง ({selectedFile.versions.length})</p>
-                   <div className="space-y-2 max-h-[120px] overflow-y-auto">
-                     {selectedFile.versions.map((v, idx) => (
-                       <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg text-xs border border-gray-100">
-                         <span className="text-gray-600 font-medium">เวอร์ชัน v{v.versionNumber}</span>
-                         <button onClick={() => handleDownload(v.fileUrl, `v${v.versionNumber}_${selectedFile.fileName}`)} className="text-indigo-600 font-bold hover:underline">⬇️ ดาวน์โหลด</button>
-                       </div>
-                     ))}
-                   </div>
-                 </div>
+                 <div className="mb-4 border-t border-gray-200 pt-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">⏳ เวอร์ชันย้อนหลัง ({selectedFile.versions.length})</p><div className="space-y-2 max-h-[120px] overflow-y-auto">{selectedFile.versions.map((v, idx) => (<div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg text-xs border border-gray-100"><span className="text-gray-600 font-medium">เวอร์ชัน v{v.versionNumber}</span><button onClick={() => handleDownload(v.fileUrl, `v${v.versionNumber}_${selectedFile.fileName}`)} className="text-indigo-600 font-bold hover:underline">⬇️ ดาวน์โหลด</button></div>))}</div></div>
               )}
-
               {isEditing && <button onClick={deleteFile} className="mt-4 text-sm bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-bold transition-colors w-full border border-red-200">🗑️ ลบไฟล์นี้ถาวร</button>}
             </div>
           </div>
         </div>
       )}
 
-      {/* Sidebar เมนูหลัก */}
+      {/* Sidebar */}
       <div className="w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col hidden md:flex">
         <div className="p-6 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => { setShowCalendar(false); setSelectedTag('All'); setCurrentFolder(null); }}>
           <h2 className="text-2xl font-black text-green-600 tracking-tight">📁 Drive</h2>
@@ -229,20 +231,17 @@ function App() {
         <ul className="flex-1 px-4 space-y-2 overflow-y-auto">
           <li onClick={() => { setShowCalendar(false); setSelectedTag('All'); setCurrentFolder(null); }} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${!showCalendar && selectedTag === 'All' && !currentFolder ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>📥 หน้าแรก (Home)</li>
           <li onClick={() => setShowCalendar(true)} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${showCalendar ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>📅 ปฏิทินทีม</li>
-          
-          {/* 🟢 เมนูใหม่: ประวัติระบบ (Audit Log) (Phase 2) */}
           <li onClick={() => { setShowCalendar(false); setSelectedTag('Logs'); setCurrentFolder(null); }} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'Logs' ? 'bg-amber-50 text-amber-700' : 'text-gray-600 hover:bg-gray-100'}`}>📜 บันทึกประวัติระบบ</li>
-
           <div className="my-4 border-t border-gray-200"></div>
           {allTags.map((tag, index) => <li key={index} onClick={() => { setShowCalendar(false); setSelectedTag(tag); setCurrentFolder(null); }} className={`p-3 rounded-xl font-medium cursor-pointer flex items-center gap-3 transition-colors ${!showCalendar && selectedTag === tag ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>🏷️ {tag}</li>)}
-          {dbUser?.role === 'admin' && <><div className="my-4 border-t border-gray-200"></div><li onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); }} className={`p-3 rounded-xl font-bold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'Admin' ? 'bg-indigo-50 text-indigo-700' : 'text-indigo-500 hover:bg-indigo-50'}`}>⚙️ ตั้งค่าระบบ AI</li></>}
+          {dbUser?.role === 'admin' && <><div className="my-4 border-t border-gray-200"></div><li onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); }} className={`p-3 rounded-xl font-bold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'Admin' ? 'bg-indigo-50 text-indigo-700' : 'text-indigo-500 hover:bg-indigo-50'}`}>⚙️ ศูนย์ควบคุม (Admin)</li></>}
         </ul>
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm z-10 gap-4">
           <h1 className="text-lg md:text-xl font-bold text-gray-800 ml-2 md:ml-0 flex items-center gap-2 truncate">
-            {showCalendar ? '📅 ปฏิทินและตารางงาน' : selectedTag === 'Admin' ? '⚙️ Admin Panel' : selectedTag === 'Logs' ? '📜 บันทึกประวัติการใช้งานระบบ (Audit Log)' : (
+            {showCalendar ? '📅 ปฏิทินและตารางงาน' : selectedTag === 'Admin' ? '⚙️ ศูนย์ควบคุมระบบ (Admin Center)' : selectedTag === 'Logs' ? '📜 บันทึกประวัติการใช้งานระบบ (Audit Log)' : (
               <>{currentFolder && <><button onClick={() => setCurrentFolder(null)} className="text-gray-400 hover:text-green-600 transition-colors">🏠 หน้าแรก</button><span className="text-gray-300">/</span></>}<span className="text-green-700 truncate flex items-center gap-2">{currentFolder ? `📁 ${currentFolder.name}` : (selectedTag === 'All' ? '📥 หน้าแรก' : `🏷️ ${selectedTag}`)}{currentFolder && (<button onClick={() => {setIsEditingFolder(true); setEditFolderName(currentFolder.name);}} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded-md ml-2 transition-colors">⚙️ จัดการ</button>)}</span></>
             )}
           </h1>
@@ -263,7 +262,6 @@ function App() {
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50">
           
-          {/* 🟢 หน้าจอแสดงผลบันทึกประวัติระบบ (Audit Log UI - Phase 2) */}
           {selectedTag === 'Logs' ? (
             <div className="max-w-4xl mx-auto bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
               <div className="flex justify-between items-center mb-6">
@@ -272,37 +270,16 @@ function App() {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 text-gray-400 font-medium bg-gray-50">
-                      <th className="p-3">⏰ เวลา</th>
-                      <th className="p-3">👤 ผู้ทำรายการ</th>
-                      <th className="p-3">🛠️ การกระทำ</th>
-                      <th className="p-3">📝 รายละเอียด</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="border-b border-gray-200 text-gray-400 font-medium bg-gray-50"><th className="p-3">⏰ เวลา</th><th className="p-3">👤 ผู้ทำรายการ</th><th className="p-3">🛠️ การกระทำ</th><th className="p-3">📝 รายละเอียด</th></tr></thead>
                   <tbody className="divide-y divide-gray-100 text-gray-700">
-                    {auditLogs.map(log => (
-                      <tr key={log._id} className="hover:bg-gray-50 transition-colors">
-                        <td className="p-3 text-xs text-gray-400 whitespace-nowrap">{new Date(log.createdAt).toLocaleString('th-TH')}</td>
-                        <td className="p-3 font-semibold text-gray-800">{log.performedBy}</td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${log.action.includes('VERSION') ? 'bg-purple-100 text-purple-700' : log.action.includes('DELETE') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                            {log.action}
-                          </span>
-                        </td>
-                        <td className="p-3 font-medium">{log.details}</td>
-                      </tr>
-                    ))}
-                    {auditLogs.length === 0 && (
-                      <tr><td colSpan="4" className="text-center py-10 text-gray-400 italic">ยังไม่มีบันทึกประวัติประธาน</td></tr>
-                    )}
+                    {auditLogs.map(log => (<tr key={log._id} className="hover:bg-gray-50 transition-colors"><td className="p-3 text-xs text-gray-400 whitespace-nowrap">{new Date(log.createdAt).toLocaleString('th-TH')}</td><td className="p-3 font-semibold text-gray-800">{log.performedBy}</td><td className="p-3"><span className={`px-2 py-0.5 rounded-md text-xs font-bold ${log.action.includes('VERSION') ? 'bg-purple-100 text-purple-700' : log.action.includes('DELETE') ? 'bg-red-100 text-red-700' : log.action.includes('BROADCAST') ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{log.action}</span></td><td className="p-3 font-medium">{log.details}</td></tr>))}
+                    {auditLogs.length === 0 && <tr><td colSpan="4" className="text-center py-10 text-gray-400 italic">ยังไม่มีบันทึกประวัติระบบ</td></tr>}
                   </tbody>
                 </table>
               </div>
             </div>
 
           ) : showCalendar ? (
-            // หน้าปฏิทิน (คงเดิม)
             <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-6">
               <div className="flex-1 bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-200">
                 <div className="flex justify-between items-center mb-6 px-2"><h2 className="text-2xl font-bold text-gray-800">{currentMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}</h2><div className="flex gap-4"><button onClick={handlePrevMonth} className="text-gray-400 hover:text-red-500 font-bold text-xl px-2">{"<"}</button><button onClick={handleNextMonth} className="text-gray-400 hover:text-red-500 font-bold text-xl px-2">{">"}</button></div></div>
@@ -319,16 +296,29 @@ function App() {
               </div>
             </div>
           ) : selectedTag === 'Admin' ? (
-            // หน้า Admin (คงเดิม)
-            <div className="max-w-2xl mx-auto bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
-              <h2 className="text-2xl font-bold text-gray-800 mb-6">⚙️ ควบคุมระบบผู้ช่วย AI</h2>
-              <div className="mb-6 flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
-                <div><h3 className="font-semibold text-gray-700">เปิดใช้งาน AI สรุปเอกสาร</h3></div>
-                <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={aiConfig.aiEnabled} onChange={(e) => setAiConfig({...aiConfig, aiEnabled: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-green-500"></div></label>
+            <div className="max-w-3xl mx-auto space-y-6">
+              
+              {/* 🟢 ส่วนที่เพิ่มใหม่ใน Admin: ระบบ Broadcast (Phase 5) */}
+              <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">📢 กระจายข่าวสาร (Broadcast)</h2>
+                <p className="text-sm text-gray-500 mb-6">ส่งข้อความแจ้งเตือนผ่านบอท LINE ไปยังผู้ใช้งานทุกคนในระบบทันที</p>
+                <textarea rows="3" placeholder="พิมพ์ข้อความประกาศที่นี่..." className="w-full p-4 border border-gray-300 rounded-xl mb-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)}></textarea>
+                <button onClick={handleBroadcast} disabled={isBroadcasting} className={`w-full font-bold py-3 rounded-xl transition-colors ${isBroadcasting ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+                  {isBroadcasting ? '⏳ กำลังส่งข้อความ...' : '🚀 ส่งประกาศ Broadcast'}
+                </button>
               </div>
-              <textarea rows="4" className="w-full p-4 border border-gray-300 rounded-xl mb-4" value={aiConfig.aiPrompt} onChange={e => setAiConfig({...aiConfig, aiPrompt: e.target.value})} disabled={!aiConfig.aiEnabled}></textarea>
-              <input type="text" className="w-full p-4 border border-gray-300 rounded-xl mb-6 font-mono" value={aiConfig.aiModel || ''} onChange={e => setAiConfig({...aiConfig, aiModel: e.target.value})} disabled={!aiConfig.aiEnabled} />
-              <button onClick={saveConfig} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl">💾 บันทึกการตั้งค่า</button>
+
+              {/* ส่วนควบคุม AI ของเดิม */}
+              <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
+                <h2 className="text-2xl font-bold text-gray-800 mb-6">⚙️ ตั้งค่าระบบผู้ช่วย AI</h2>
+                <div className="mb-6 flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <div><h3 className="font-semibold text-gray-700">เปิดใช้งาน AI สรุปเอกสาร</h3></div>
+                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={aiConfig.aiEnabled} onChange={(e) => setAiConfig({...aiConfig, aiEnabled: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-green-500"></div></label>
+                </div>
+                <textarea rows="4" className="w-full p-4 border border-gray-300 rounded-xl mb-4" value={aiConfig.aiPrompt} onChange={e => setAiConfig({...aiConfig, aiPrompt: e.target.value})} disabled={!aiConfig.aiEnabled}></textarea>
+                <input type="text" className="w-full p-4 border border-gray-300 rounded-xl mb-6 font-mono" value={aiConfig.aiModel || ''} onChange={e => setAiConfig({...aiConfig, aiModel: e.target.value})} disabled={!aiConfig.aiEnabled} />
+                <button onClick={saveConfig} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl">💾 บันทึกการตั้งค่า AI</button>
+              </div>
             </div>
           ) : (
             <>
@@ -377,10 +367,7 @@ function App() {
                       )}
                       <div className="p-3 flex-1 flex flex-col justify-between border-t border-gray-50">
                         <div className="mb-2 flex flex-wrap gap-1">{item.tags?.map((t, i) => <span key={i} className="bg-gray-100 text-gray-500 text-[10px] px-2 py-1 rounded-md">{t}</span>)}</div>
-                        <div className="flex justify-between items-center mt-1">
-                          <small className="text-gray-400 text-[10px]">📅 {new Date(item.createdAt).toLocaleDateString('th-TH')}</small>
-                          {item.version > 1 && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold">v{item.version}</span>}
-                        </div>
+                        <div className="flex justify-between items-center mt-1"><small className="text-gray-400 text-[10px]">📅 {new Date(item.createdAt).toLocaleDateString('th-TH')}</small>{item.version > 1 && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold">v{item.version}</span>}</div>
                       </div>
                     </div>
                   ))}

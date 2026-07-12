@@ -356,4 +356,55 @@ app.get('/api/audit-logs', async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// --- 🟢 เติมเต็ม Phase 5: ระบบแจ้งเตือน (LINE Push & Broadcast) ---
+const axios = require('axios'); // สำหรับยิง API ไปหา LINE
+
+// 1. API บรอดแคสต์ประกาศจาก Admin ไปหาทุกคน
+app.post('/api/admin/broadcast', express.json(), async (req, res) => {
+  try {
+    const { message, adminId } = req.body;
+    
+    // ยิงคำสั่ง Broadcast ไปที่ LINE API
+    await axios.post('https://api.line.me/v2/bot/message/broadcast', {
+      messages: [{ type: 'text', text: `📢 [ประกาศจากระบบ]\n${message}` }]
+    }, { 
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` 
+      } 
+    });
+    
+    // บันทึกลงประวัติระบบ
+    const log = new AuditLog({ action: 'BROADCAST', details: `Admin ประกาศ: ${message}`, performedBy: 'Admin', ownerId: adminId });
+    await log.save();
+
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// 2. API สั่งบอทแจ้งเตือนกำหนดการ (Push Notification)
+app.post('/api/notify/event', express.json(), async (req, res) => {
+  try {
+    const { eventTitle, eventDate, userId } = req.body;
+    
+    await axios.post('https://api.line.me/v2/bot/message/push', {
+      to: userId,
+      messages: [{ 
+        type: 'text', 
+        text: `⏰ แจ้งเตือนกำหนดการ!\n📌 งาน: ${eventTitle}\n📅 วันที่: ${eventDate}\n\nอย่าลืมเตรียมตัวให้พร้อมนะครับ!` 
+      }]
+    }, { 
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` 
+      } 
+    });
+    
+    const log = new AuditLog({ action: 'NOTIFICATION', details: `แจ้งเตือนกิจกรรม: ${eventTitle}`, performedBy: 'System', ownerId: userId });
+    await log.save();
+
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 app.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));
