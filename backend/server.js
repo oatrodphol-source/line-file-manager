@@ -419,4 +419,21 @@ app.post('/api/notify/event', express.json(), async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// 3. API ส่งข้อความเจาะจงเข้ากลุ่ม (Group Push Notification)
+app.post('/api/admin/push', express.json(), async (req, res) => {
+  try {
+    const { message, targetId } = req.body;
+    await axios.post('https://api.line.me/v2/bot/message/push', {
+      to: targetId,
+      messages: [{ type: 'text', text: message }] // 🟢 ส่งข้อความเข้ากลุ่มตรงๆ
+    }, { 
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` 
+      } 
+    });
+    res.json({ success: true });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 app.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));
