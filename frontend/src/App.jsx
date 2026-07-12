@@ -29,11 +29,9 @@ function App() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showEventModal, setShowEventModal] = useState(false);
-  const [newEvent, setNewEvent] = useState({ _id: null, title: '', date: new Date().toISOString().split('T')[0], isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' });
+  const [newEvent, setNewEvent] = useState({ _id: null, title: '', date: new Date().toLocaleDateString('en-CA'), isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' });
 
   const [auditLogs, setAuditLogs] = useState([]);
-  
-  // 🟢 State ใหม่สำหรับระบบ Broadcast (Phase 5)
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [isBroadcasting, setIsBroadcasting] = useState(false);
 
@@ -46,6 +44,7 @@ function App() {
           setProfile(userProfile);
           const res = await axios.post('https://line-file-manager.onrender.com/api/users', { lineId: userProfile.userId, displayName: userProfile.displayName, pictureUrl: userProfile.pictureUrl });
           setDbUser(res.data); fetchMedia(userProfile.userId); fetchEvents(userProfile.userId); fetchAuditLogs(userProfile.userId);
+          if (res.data.role === 'admin') { setSelectedTag('All'); }
           if (res.data.role === 'admin') fetchConfig();
         }
       } catch (err) { console.error("Error:", err); }
@@ -83,31 +82,27 @@ function App() {
         const res = await axios.post('https://line-file-manager.onrender.com/api/events', { ...newEvent, ownerId: dbUser.lineId });
         setEvents([...events, res.data]);
       }
-      setShowEventModal(false); setNewEvent({ _id: null, title: '', date: selectedDate.toISOString().split('T')[0], isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' }); fetchAuditLogs(dbUser.lineId);
+      setShowEventModal(false); setNewEvent({ _id: null, title: '', date: selectedDate.toLocaleDateString('en-CA'), isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' }); fetchAuditLogs(dbUser.lineId);
     } catch (error) { alert("เกิดข้อผิดพลาด"); }
   };
   const handleDeleteEvent = async (id) => { if(window.confirm("ลบกิจกรรมนี้?")) { await axios.delete(`https://line-file-manager.onrender.com/api/events/${id}`); setEvents(events.filter(e => e._id !== id)); setShowEventModal(false); fetchAuditLogs(dbUser.lineId); } };
   const openEditEventModal = (ev) => { setNewEvent(ev); setShowEventModal(true); };
 
-  // 🟢 ฟังก์ชันส่งการแจ้งเตือนกิจกรรมผ่าน LINE บอท (Phase 5)
   const handleNotifyEventLINE = async () => {
     if (!newEvent._id) return;
     try {
       await axios.post('https://line-file-manager.onrender.com/api/notify/event', { eventTitle: newEvent.title, eventDate: newEvent.date, userId: dbUser.lineId });
-      alert("🔔 ส่งการแจ้งเตือนลง LINE ของคุณเรียบร้อยแล้ว!");
-      fetchAuditLogs(dbUser.lineId);
+      alert("🔔 ส่งการแจ้งเตือนลง LINE ของคุณเรียบร้อยแล้ว!"); fetchAuditLogs(dbUser.lineId);
     } catch (e) { alert("❌ ส่งแจ้งเตือนไม่สำเร็จ"); }
   };
 
-  // 🟢 ฟังก์ชัน Broadcast ข้อความ (Phase 5)
   const handleBroadcast = async () => {
     if (!broadcastMsg.trim()) return alert("กรุณาพิมพ์ข้อความ");
     if (!window.confirm("📢 ยืนยันการส่งประกาศหาทุกคนในระบบ?")) return;
     setIsBroadcasting(true);
     try {
       await axios.post('https://line-file-manager.onrender.com/api/admin/broadcast', { message: broadcastMsg, adminId: dbUser.lineId });
-      alert("✅ ส่งประกาศสำเร็จ!");
-      setBroadcastMsg(''); fetchAuditLogs(dbUser.lineId);
+      alert("✅ ส่งประกาศสำเร็จ!"); setBroadcastMsg(''); fetchAuditLogs(dbUser.lineId);
     } catch (e) { alert("❌ บรอดแคสต์ล้มเหลว"); } finally { setIsBroadcasting(false); }
   };
 
@@ -115,6 +110,8 @@ function App() {
   const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
   const handlePrevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  
+  // 🟢 แก้ไขปัญหาวันที่เลื่อนด้วยการใช้ไทม์โซนท้องถิ่น (en-CA = YYYY-MM-DD)
   const selectedDateString = selectedDate.toLocaleDateString('en-CA');
   const eventsOnSelectedDate = events.filter(ev => ev.date === selectedDateString);
 
@@ -135,11 +132,25 @@ function App() {
     } catch (err) {}
   };
   const deleteFile = async () => { if (window.confirm('⚠️ ลบไฟล์นี้ถาวร?')) { await axios.delete(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`); setMediaFiles(mediaFiles.filter(f => f._id !== selectedFile._id)); setSelectedFile(null); fetchAuditLogs(dbUser.lineId); } };
+  
+  // 🟢 อัปเกรดระบบดาวน์โหลดไม้ตายสูงสุด: บังคับแปลงลิงก์เป็น Attachment ดักหน้าขาวใน LINE
   const handleDownload = async (url, fileName) => {
-    if (liff.isInClient()) { liff.openWindow({ url: url, external: true }); }
-    else { try { const response = await fetch(url); const blob = await response.blob(); const blobUrl = window.URL.createObjectURL(blob); const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || 'download'; document.body.appendChild(link); link.click(); document.body.removeChild(link); window.URL.revokeObjectURL(blobUrl); } catch (err) { window.open(url, '_blank'); } }
+    let downloadUrl = url;
+    if (url.includes('cloudinary.com') && !url.includes('fl_attachment')) {
+      downloadUrl = url.replace('/upload/', '/upload/fl_attachment/');
+    }
+
+    if (liff.isInClient()) {
+      liff.openWindow({ url: downloadUrl, external: true });
+    } else {
+      try {
+        const response = await fetch(downloadUrl); const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || 'download';
+        document.body.appendChild(link); link.click(); document.body.removeChild(link); window.URL.revokeObjectURL(blobUrl);
+      } catch (err) { window.open(downloadUrl, '_blank'); }
+    }
   };
-  const saveConfig = async () => { try { await axios.post('https://line-file-manager.onrender.com/api/admin/config', { userId: dbUser.lineId, ...aiConfig }); alert('✅ บันทึกแล้ว!'); } catch (err) {} };
 
   const currentFolderFiles = mediaFiles.filter(file => !currentFolder ? !file.folderId : file.folderId === currentFolder._id);
   const allTags = [...new Set(mediaFiles.flatMap(file => file.tags || []))];
@@ -157,7 +168,7 @@ function App() {
     for (let i = 1; i <= daysInMonth; i++) {
       const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       const isSelected = selectedDateString === dateString; const isToday = new Date().toLocaleDateString('en-CA') === dateString; const hasEvents = events.some(ev => ev.date === dateString);
-      days.push(<div key={i} onClick={() => { setSelectedDate(new Date(year, month, i)); setNewEvent({...newEvent, _id: null, date: dateString, title: '', url: '', description: ''}); }} className={`h-12 md:h-16 flex flex-col items-center justify-center cursor-pointer rounded-full md:rounded-xl transition-all ${isSelected ? 'bg-red-500 text-white font-bold shadow-md' : isToday ? 'text-red-500 font-bold' : 'hover:bg-gray-100 text-gray-800'}`}><span className="text-sm md:text-lg">{i}</span>{hasEvents && <div className={`w-1.5 h-1.5 rounded-full mt-1 ${isSelected ? 'bg-white' : 'bg-gray-400'}`}></div>}</div>);
+      days.push(<div key={i} onClick={() => { setSelectedDate(new Date(year, month, i)); setNewEvent({ _id: null, date: dateString, title: '', url: '', description: '', isAllDay: true, startTime: '09:00', endTime: '10:00' }); }} className={`h-12 md:h-16 flex flex-col items-center justify-center cursor-pointer rounded-full md:rounded-xl transition-all ${isSelected ? 'bg-red-500 text-white font-bold shadow-md' : isToday ? 'text-red-500 font-bold' : 'hover:bg-gray-100 text-gray-800'}`}><span className="text-sm md:text-lg">{i}</span>{hasEvents && <div className={`w-1.5 h-1.5 rounded-full mt-1 ${isSelected ? 'bg-white' : 'bg-gray-400'}`}></div>}</div>);
     }
     return days;
   };
@@ -165,7 +176,7 @@ function App() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
-      {/* Modal ปฏิทิน (เพิ่มปุ่มแจ้งเตือน LINE) */}
+      {/* Modal ปฏิทิน */}
       {showEventModal && (
         <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black bg-opacity-60 transition-opacity backdrop-blur-sm">
           <div className="bg-[#1c1c1e] md:bg-white md:text-black text-white w-full md:max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden animate-slide-up">
@@ -178,11 +189,9 @@ function App() {
                 {!newEvent.isAllDay && (<div className="border-t border-gray-700 md:border-gray-200 pt-4 flex justify-between items-center gap-4"><div className="flex flex-col w-1/2"><span className="text-xs text-gray-400">เริ่ม</span><input type="time" className="bg-transparent text-white md:text-black outline-none" value={newEvent.startTime} onChange={e => setNewEvent({...newEvent, startTime: e.target.value})} /></div><div className="flex flex-col w-1/2"><span className="text-xs text-gray-400">สิ้นสุด</span><input type="time" className="bg-transparent text-white md:text-black outline-none" value={newEvent.endTime} onChange={e => setNewEvent({...newEvent, endTime: e.target.value})} /></div></div>)}
               </div>
               <div className="bg-[#2c2c2e] md:bg-gray-50 rounded-xl overflow-hidden"><textarea placeholder="เพิ่มโน้ต..." className="w-full bg-transparent p-4 outline-none text-white md:text-black text-sm resize-none min-h-[100px]" value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})}></textarea></div>
-              
-              {/* 🟢 ปุ่มพิเศษสำหรับ Phase 5 */}
               {newEvent._id && (
                  <div className="flex gap-2 mt-4">
-                    <button onClick={handleNotifyEventLINE} className="flex-1 bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">🔔 แจ้งเตือนลง LINE</button>
+                    <button onClick={handleNotifyEventLINE} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">🔔 แจ้งเตือนลง LINE</button>
                     <button onClick={() => handleDeleteEvent(newEvent._id)} className="w-16 bg-red-900 bg-opacity-30 md:bg-red-50 text-red-500 rounded-xl flex items-center justify-center text-xl">🗑️</button>
                  </div>
               )}
@@ -191,7 +200,7 @@ function App() {
         </div>
       )}
 
-      {/* Modal ดูไฟล์และแก้ไขรายละเอียด (คงเดิม) */}
+      {/* Modal ดูไฟล์ */}
       {selectedFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm">
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]">
@@ -203,7 +212,6 @@ function App() {
               )}
               <button onClick={() => { setSelectedFile(null); setIsEditing(false); }} className="absolute top-4 right-4 bg-white text-gray-800 rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-gray-200 font-black text-xl border-2 border-gray-100">✕</button>
             </div>
-            
             <div className="w-full md:w-96 p-6 flex flex-col bg-white overflow-y-auto border-l border-gray-100">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-gray-800">รายละเอียด <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">v{selectedFile.version}</span></h3>
@@ -212,18 +220,17 @@ function App() {
               <div className="mb-4">{isEditing ? <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm font-bold focus:ring-2 focus:ring-green-500 outline-none mb-1" value={editForm.fileName || ''} onChange={(e) => setEditForm({...editForm, fileName: e.target.value})} /> : <p className="text-sm font-bold text-gray-700 mb-1">{selectedFile.fileName || 'ไม่ได้ตั้งชื่อไฟล์'}</p>}<p className="text-xs text-gray-400">📅 {new Date(selectedFile.createdAt).toLocaleString('th-TH')}</p></div>
               <div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📁 ย้ายแฟ้ม</p>{isEditing ? (<select className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 outline-none" value={editForm.folderId || 'null'} onChange={(e) => setEditForm({...editForm, folderId: e.target.value === 'null' ? null : e.target.value})}><option value="null">🏠 หน้าแรกสุด</option>{folders.map(f => <option key={f._id} value={f._id}>📂 {f.name}</option>)}</select>) : (<div className="bg-gray-50 text-gray-600 text-sm px-3 py-2 rounded-lg border border-gray-200">{folders.find(f => f._id === selectedFile.folderId)?.name ? `📂 ${folders.find(f => f._id === selectedFile.folderId).name}` : '🏠 อยู่ในหน้าแรกสุด'}</div>)}</div>
               <div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">🏷️ แท็ก</p>{isEditing ? <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none" value={editForm.tags} onChange={(e) => setEditForm({...editForm, tags: e.target.value})} /> : <div className="flex flex-wrap gap-2">{selectedFile.tags?.map((t, i) => <span key={i} className="bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-md font-medium border border-indigo-100">{t}</span>)}</div>}</div>
-              <div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📝 โน้ต</p>{isEditing ? <textarea className="w-full flex-1 p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none min-h-[80px]" value={editForm.note} onChange={(e) => setEditForm({...editForm, note: e.target.value})}></textarea> : <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 min-h-[80px] whitespace-pre-wrap overflow-y-auto">{selectedFile.note || "-"}</div>}</div>
-              
+              <div className="flex-1 flex flex-col"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📝 โน้ต</p>{isEditing ? <textarea className="w-full flex-1 p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none min-h-[80px]" value={editForm.note} onChange={(e) => setEditForm({...editForm, note: e.target.value})}></textarea> : <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 min-h-[80px] whitespace-pre-wrap overflow-y-auto">{selectedFile.note || "-"}</div>}</div>
               {!isEditing && selectedFile.versions && selectedFile.versions.length > 0 && (
                  <div className="mb-4 border-t border-gray-200 pt-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">⏳ เวอร์ชันย้อนหลัง ({selectedFile.versions.length})</p><div className="space-y-2 max-h-[120px] overflow-y-auto">{selectedFile.versions.map((v, idx) => (<div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg text-xs border border-gray-100"><span className="text-gray-600 font-medium">เวอร์ชัน v{v.versionNumber}</span><button onClick={() => handleDownload(v.fileUrl, `v${v.versionNumber}_${selectedFile.fileName}`)} className="text-indigo-600 font-bold hover:underline">⬇️ ดาวน์โหลด</button></div>))}</div></div>
               )}
-              {isEditing && <button onClick={deleteFile} className="mt-4 text-sm bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-bold transition-colors w-full border border-red-200">🗑️ ลบไฟล์นี้ถาวร</button>}
+              {isEditing && <button onClick={deleteFile} className="mt-4 text-sm bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-bold w-full border border-red-200">🗑️ ลบไฟล์นี้ถาวร</button>}
             </div>
           </div>
         </div>
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar คอม */}
       <div className="w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col hidden md:flex">
         <div className="p-6 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => { setShowCalendar(false); setSelectedTag('All'); setCurrentFolder(null); }}>
           <h2 className="text-2xl font-black text-green-600 tracking-tight">📁 Drive</h2>
@@ -257,28 +264,26 @@ function App() {
             <button onClick={() => setShowCalendar(true)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${showCalendar ? 'bg-red-500 text-white' : 'bg-gray-50 text-gray-600'}`}>📅 ปฏิทิน</button>
             <button onClick={() => { setShowCalendar(false); setSelectedTag('Logs'); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${selectedTag === 'Logs' ? 'bg-amber-500 text-white' : 'bg-gray-50 text-gray-600'}`}>📜 ประวัติ</button>
             {allTags.map((tag, i) => <button key={i} onClick={() => { setShowCalendar(false); setSelectedTag(tag); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${!showCalendar && selectedTag === tag ? 'bg-green-500 text-white' : 'bg-gray-50 text-gray-600'}`}>🏷️ {tag}</button>)}
+            {/* 🟢 ปุ่มแอดมินบนมือถือ กลับมาแสดงผลอย่างถูกต้องตามสิทธิ์จริง */}
+            {dbUser?.role === 'admin' && (
+              <button onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold border ${selectedTag === 'Admin' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>⚙️ แอดมิน</button>
+            )}
           </div>
         </div>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50">
-          
           {selectedTag === 'Logs' ? (
             <div className="max-w-4xl mx-auto bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold text-gray-800">📋 กิจกรรมล่าสุดในระบบ (สูงสุด 50 รายการ)</h3>
-                <button onClick={() => fetchAuditLogs(dbUser.lineId)} className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-200 font-bold">🔄 รีเฟรช</button>
-              </div>
+              <div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-gray-800">📋 กิจกรรมล่าสุดในระบบ (สูงสุด 50 รายการ)</h3><button onClick={() => fetchAuditLogs(dbUser.lineId)} className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg font-bold">🔄 รีเฟรช</button></div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-sm">
                   <thead><tr className="border-b border-gray-200 text-gray-400 font-medium bg-gray-50"><th className="p-3">⏰ เวลา</th><th className="p-3">👤 ผู้ทำรายการ</th><th className="p-3">🛠️ การกระทำ</th><th className="p-3">📝 รายละเอียด</th></tr></thead>
                   <tbody className="divide-y divide-gray-100 text-gray-700">
                     {auditLogs.map(log => (<tr key={log._id} className="hover:bg-gray-50 transition-colors"><td className="p-3 text-xs text-gray-400 whitespace-nowrap">{new Date(log.createdAt).toLocaleString('th-TH')}</td><td className="p-3 font-semibold text-gray-800">{log.performedBy}</td><td className="p-3"><span className={`px-2 py-0.5 rounded-md text-xs font-bold ${log.action.includes('VERSION') ? 'bg-purple-100 text-purple-700' : log.action.includes('DELETE') ? 'bg-red-100 text-red-700' : log.action.includes('BROADCAST') ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{log.action}</span></td><td className="p-3 font-medium">{log.details}</td></tr>))}
-                    {auditLogs.length === 0 && <tr><td colSpan="4" className="text-center py-10 text-gray-400 italic">ยังไม่มีบันทึกประวัติระบบ</td></tr>}
                   </tbody>
                 </table>
               </div>
             </div>
-
           ) : showCalendar ? (
             <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-6">
               <div className="flex-1 bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-200">
@@ -288,7 +293,7 @@ function App() {
               </div>
               <div className="w-full md:w-80 flex flex-col gap-4">
                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex-1">
-                  <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-gray-800">{selectedDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'long' })}</h3><button onClick={() => { setNewEvent({ _id: null, title: '', date: selectedDate.toISOString().split('T')[0], isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' }); setShowEventModal(true); }} className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors font-bold text-xl pb-1">+</button></div>
+                  <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-gray-800">{selectedDate.toLocaleDateString('th-TH', { day: 'numeric', month: 'long' })}</h3><button onClick={() => { setNewEvent({ _id: null, title: '', date: selectedDate.toLocaleDateString('en-CA'), isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' }); setShowEventModal(true); }} className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center font-bold text-xl pb-1">+</button></div>
                   {eventsOnSelectedDate.length === 0 ? (<div className="text-center text-gray-400 py-10 flex flex-col items-center"><span className="text-4xl mb-2">🎈</span><p className="text-sm">ไม่มีกิจกรรม</p></div>) : (
                     <div className="space-y-3">{eventsOnSelectedDate.map(ev => (<div key={ev._id} onClick={() => openEditEventModal(ev)} className="p-3 rounded-xl border border-gray-100 bg-gray-50 flex items-start gap-3 group relative cursor-pointer hover:border-red-300 transition-colors"><div className={`w-1.5 h-10 rounded-full shrink-0 ${ev.isAllDay ? 'bg-purple-500' : 'bg-blue-500'}`}></div><div className="flex-1 min-w-0"><h4 className="font-bold text-gray-800 text-sm truncate">{ev.title}</h4><p className="text-xs text-gray-500 mt-1">{ev.isAllDay ? 'ทั้งวัน' : `${ev.startTime} - ${ev.endTime}`}{ev.url && <a href={ev.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="block text-blue-500 truncate mt-1 hover:underline">🔗 ลิงก์แนบ</a>}</p></div></div>))}</div>
                   )}
@@ -297,23 +302,16 @@ function App() {
             </div>
           ) : selectedTag === 'Admin' ? (
             <div className="max-w-3xl mx-auto space-y-6">
-              
-              {/* 🟢 ส่วนที่เพิ่มใหม่ใน Admin: ระบบ Broadcast (Phase 5) */}
               <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">📢 กระจายข่าวสาร (Broadcast)</h2>
-                <p className="text-sm text-gray-500 mb-6">ส่งข้อความแจ้งเตือนผ่านบอท LINE ไปยังผู้ใช้งานทุกคนในระบบทันที</p>
-                <textarea rows="3" placeholder="พิมพ์ข้อความประกาศที่นี่..." className="w-full p-4 border border-gray-300 rounded-xl mb-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)}></textarea>
-                <button onClick={handleBroadcast} disabled={isBroadcasting} className={`w-full font-bold py-3 rounded-xl transition-colors ${isBroadcasting ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
-                  {isBroadcasting ? '⏳ กำลังส่งข้อความ...' : '🚀 ส่งประกาศ Broadcast'}
-                </button>
+                <textarea rows="3" placeholder="พิมพ์ข้อความประกาศที่นี่..." className="w-full p-4 border border-gray-300 rounded-xl mb-4" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)}></textarea>
+                <button onClick={handleBroadcast} disabled={isBroadcasting} className={`w-full font-bold py-3 rounded-xl text-white ${isBroadcasting ? 'bg-gray-300' : 'bg-blue-600'}`}>{isBroadcasting ? '⏳ กำลังส่ง...' : '🚀 ส่งประกาศ Broadcast'}</button>
               </div>
-
-              {/* ส่วนควบคุม AI ของเดิม */}
               <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
                 <h2 className="text-2xl font-bold text-gray-800 mb-6">⚙️ ตั้งค่าระบบผู้ช่วย AI</h2>
                 <div className="mb-6 flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
                   <div><h3 className="font-semibold text-gray-700">เปิดใช้งาน AI สรุปเอกสาร</h3></div>
-                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={aiConfig.aiEnabled} onChange={(e) => setAiConfig({...aiConfig, aiEnabled: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-green-500"></div></label>
+                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={aiConfig.aiEnabled} onChange={(e) => setAiConfig({...aiConfig, aiEnabled: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-green-500"></div></label>
                 </div>
                 <textarea rows="4" className="w-full p-4 border border-gray-300 rounded-xl mb-4" value={aiConfig.aiPrompt} onChange={e => setAiConfig({...aiConfig, aiPrompt: e.target.value})} disabled={!aiConfig.aiEnabled}></textarea>
                 <input type="text" className="w-full p-4 border border-gray-300 rounded-xl mb-6 font-mono" value={aiConfig.aiModel || ''} onChange={e => setAiConfig({...aiConfig, aiModel: e.target.value})} disabled={!aiConfig.aiEnabled} />
@@ -327,7 +325,7 @@ function App() {
                 {isEditingFolder && currentFolder && (
                    <div className="mb-6 p-4 bg-gray-100 rounded-xl border border-gray-200 max-w-lg">
                       <h4 className="font-bold mb-3 text-sm text-gray-700">⚙️ จัดการโฟลเดอร์ปัจจุบัน</h4>
-                      <div className="flex gap-2 mb-3"><input type="text" value={editFolderName} onChange={e => setEditFolderName(e.target.value)} className="flex-1 p-2 rounded-lg border border-gray-300 text-sm outline-none focus:ring-2 focus:ring-green-500" /><button onClick={handleRenameFolder} className="bg-green-500 text-white px-4 py-2 rounded-lg font-bold text-sm">เปลี่ยนชื่อ</button><button onClick={() => setIsEditingFolder(false)} className="bg-white text-gray-600 border border-gray-300 px-4 py-2 rounded-lg font-bold text-sm">ยกเลิก</button></div>
+                      <div className="flex gap-2 mb-3"><input type="text" value={editFolderName} onChange={e => setEditFolderName(e.target.value)} className="flex-1 p-2 rounded-lg border border-gray-300 text-sm outline-none" /><button onClick={handleRenameFolder} className="bg-green-500 text-white px-4 py-2 rounded-lg font-bold text-sm">เปลี่ยนชื่อ</button><button onClick={() => setIsEditingFolder(false)} className="bg-white text-gray-600 border border-gray-300 px-4 py-2 rounded-lg font-bold text-sm">ยกเลิก</button></div>
                       <button onClick={handleDeleteFolder} className="text-red-500 text-sm font-bold hover:underline">🗑️ ลบโฟลเดอร์นี้</button>
                    </div>
                 )}
@@ -352,7 +350,6 @@ function App() {
                 )}
               </div>
 
-              {/* หน้าไฟล์ */}
               <h3 className="text-sm font-bold text-gray-500 mb-4 border-t border-gray-200 pt-6">📄 ไฟล์เอกสารและรูปภาพ ({displayedFiles.length})</h3>
               {displayedFiles.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-gray-400"><span className="text-6xl mb-4">📭</span><p>ไม่พบไฟล์</p></div>

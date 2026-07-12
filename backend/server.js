@@ -356,15 +356,12 @@ app.get('/api/audit-logs', async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// --- 🟢 เติมเต็ม Phase 5: ระบบแจ้งเตือน (LINE Push & Broadcast) ---
-const axios = require('axios'); // สำหรับยิง API ไปหา LINE
+// --- 🟢 API สำหรับแจ้งเตือน (LINE Push & Broadcast) (แก้ไขการชนกันของตัวแปรแล้ว) ---
 
 // 1. API บรอดแคสต์ประกาศจาก Admin ไปหาทุกคน
 app.post('/api/admin/broadcast', express.json(), async (req, res) => {
   try {
     const { message, adminId } = req.body;
-    
-    // ยิงคำสั่ง Broadcast ไปที่ LINE API
     await axios.post('https://api.line.me/v2/bot/message/broadcast', {
       messages: [{ type: 'text', text: `📢 [ประกาศจากระบบ]\n${message}` }]
     }, { 
@@ -373,11 +370,8 @@ app.post('/api/admin/broadcast', express.json(), async (req, res) => {
         'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` 
       } 
     });
-    
-    // บันทึกลงประวัติระบบ
     const log = new AuditLog({ action: 'BROADCAST', details: `Admin ประกาศ: ${message}`, performedBy: 'Admin', ownerId: adminId });
     await log.save();
-
     res.json({ success: true });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
@@ -386,7 +380,6 @@ app.post('/api/admin/broadcast', express.json(), async (req, res) => {
 app.post('/api/notify/event', express.json(), async (req, res) => {
   try {
     const { eventTitle, eventDate, userId } = req.body;
-    
     await axios.post('https://api.line.me/v2/bot/message/push', {
       to: userId,
       messages: [{ 
@@ -399,10 +392,8 @@ app.post('/api/notify/event', express.json(), async (req, res) => {
         'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` 
       } 
     });
-    
     const log = new AuditLog({ action: 'NOTIFICATION', details: `แจ้งเตือนกิจกรรม: ${eventTitle}`, performedBy: 'System', ownerId: userId });
     await log.save();
-
     res.json({ success: true });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
