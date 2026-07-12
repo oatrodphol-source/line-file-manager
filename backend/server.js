@@ -281,14 +281,24 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     const { ownerId, folderId, userName } = req.body;
     const targetFolderId = folderId === 'null' || !folderId ? null : folderId;
 
+    // 🟢 แก้บั๊กชื่อไฟล์ภาษาไทยกลายเป็นภาษาต่างดาว (Fix Encoding)
+    let originalName = req.file.originalname;
+    try { originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8'); } catch(e) {}
+
+    // 🟢 ตรวจสอบอย่างเข้มงวดว่าเป็นไฟล์ PDF หรือไม่ เพื่อป้องกัน Cloudinary ตรวจจับพลาดเป็นรูปภาพ
+    const isPdf = originalName.toLowerCase().endsWith('.pdf') || req.file.mimetype === 'application/pdf';
+
     const stream = cloudinary.uploader.upload_stream(
       { resource_type: 'auto' },
       async (error, result) => {
         if (error) return res.status(500).json({ error });
 
-        // 🔍 ตรวจสอบว่ามีไฟล์ชื่อนี้ในโฟลเดอร์นี้อยู่แล้วหรือไม่
+        // บังคับประเภทไฟล์ให้ถูกต้องตรงตามจริง
+        const finalFileType = isPdf ? 'document' : (result.resource_type === 'image' ? 'image' : 'document');
+
+        // 🔍 ตรวจสอบว่ามีไฟล์ชื่อนี้ในโฟลเดอร์นี้อยู่แล้วหรือไม่ (เปลี่ยนมาเช็คด้วย originalName ที่แก้ภาษาไทยแล้ว)
         const existingFile = await Media.findOne({ 
-          fileName: req.file.originalname, 
+          fileName: originalName, 
           folderId: targetFolderId, 
           ownerId: ownerId 
         });
@@ -300,13 +310,19 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
             versionNumber: existingFile.version
           });
 
-          // อัปเดตลิงก์ปัจจุบันเป็นไฟล์ใหม่ที่เพิ่งอัปโหลด และเพิ่มเลขเวอร์ชัน
+          // อัปเดตลิงก์ปัจจุบันเป็นไฟล์ใหม่ที่เพิ่งอัปโหลด เพิ่มเลขเวอร์ชัน และแก้ประเภทไฟล์ให้ถูกต้อง
           existingFile.fileUrl = result.secure_url;
+          existingFile.fileType = finalFileType; // 🟢 อัปเดตให้ตรงตามจริง
           existingFile.version += 1;
           await existingFile.save();
 
-          // 📜 บันทึกประวัติประธาน (Audit Log)
-          const log = new AuditLog({ action: 'UPLOAD_NEW_VERSION', details: `อัปโหลดเวอร์ชันใหม่ครอบทับไฟล์: ${req.file.originalname} (v${existingFile.version})`, performedBy: userName || 'User', ownerId });
+          // 📜 บันทึกประวัติประธาน (Audit Log) - โครงสร้างเดิมปลอดภัย 100%
+          const log = new AuditLog({ 
+            action: 'UPLOAD_NEW_VERSION', 
+            details: `อัปโหลดเวอร์ชันใหม่ครอบทับไฟล์: ${originalName} (v${existingFile.version})`, 
+            performedBy: userName || 'User', 
+            ownerId 
+          });
           await log.save();
 
           return res.status(200).json(existingFile);
@@ -314,15 +330,20 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
           // 🆕 ไม่มีไฟล์ซ้ำ สร้างรายการใหม่ปกติ
           const newMedia = new Media({
             fileUrl: result.secure_url,
-            fileType: result.resource_type === 'image' ? 'image' : 'document',
-            fileName: req.file.originalname,
+            fileType: finalFileType, // 🟢 ใช้ตัวแปรคัดกรองประเภทไฟล์ถูกต้องแล้ว
+            fileName: originalName,  // 🟢 ใช้ชื่อไฟล์ภาษาไทยที่แก้ไขแล้ว
             ownerId: ownerId,
             sourceType: 'web',
             folderId: targetFolderId
           });
           await newMedia.save();
 
-          const log = new AuditLog({ action: 'UPLOAD', details: `อัปโหลดไฟล์ใหม่: ${req.file.originalname}`, performedBy: userName || 'User', ownerId });
+          const log = new AuditLog({ 
+            action: 'UPLOAD', 
+            details: `อัปโหลดไฟล์ใหม่: ${originalName}`, 
+            performedBy: userName || 'User', 
+            ownerId 
+          });
           await log.save();
 
           return res.status(201).json(newMedia);

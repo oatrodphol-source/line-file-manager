@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import liff from '@line/liff';
 
+// 🟢 ฟังก์ชันช่วยเหลือ: แยกแยะไฟล์รูปภาพกับ PDF ให้แม่นยำ 100%
+const isImageFile = (file) => {
+  if (!file) return false;
+  const name = (file.fileName || '').toLowerCase();
+  const url = (file.fileUrl || '').toLowerCase();
+  if (name.endsWith('.pdf') || url.endsWith('.pdf')) return false;
+  return file.fileType === 'image';
+};
+
 function App() {
   const [mediaFiles, setMediaFiles] = useState([]);
   const [profile, setProfile] = useState(null);
@@ -18,13 +27,11 @@ function App() {
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  
   const [isEditingFolder, setIsEditingFolder] = useState(false);
   const [editFolderName, setEditFolderName] = useState('');
 
   const [searchQuery, setSearchQuery] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
-  
   const [events, setEvents] = useState([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -44,7 +51,6 @@ function App() {
           setProfile(userProfile);
           const res = await axios.post('https://line-file-manager.onrender.com/api/users', { lineId: userProfile.userId, displayName: userProfile.displayName, pictureUrl: userProfile.pictureUrl });
           setDbUser(res.data); fetchMedia(userProfile.userId); fetchEvents(userProfile.userId); fetchAuditLogs(userProfile.userId);
-          if (res.data.role === 'admin') { setSelectedTag('All'); }
           if (res.data.role === 'admin') fetchConfig();
         }
       } catch (err) { console.error("Error:", err); }
@@ -57,7 +63,15 @@ function App() {
   const fetchMedia = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/media?userId=${userId}`); setMediaFiles(res.data); } catch (e) {} };
   const fetchFolders = async (userId, parentId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/folders?userId=${userId}&parentId=${parentId}`); setFolders(res.data); } catch (e) {} };
   const fetchEvents = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/events?userId=${userId}`); setEvents(res.data); } catch (e) {} };
-  const fetchConfig = async () => { try { const res = await axios.get('https://line-file-manager.onrender.com/api/admin/config'); if (res.data) setAiConfig(res.data); } catch (e) {} };
+  
+  // 🟢 ป้องกันการแครชของหน้า Admin หากไม่มีข้อมูลใน DB
+  const fetchConfig = async () => { 
+    try { 
+      const res = await axios.get('https://line-file-manager.onrender.com/api/admin/config'); 
+      if (res.data && Object.keys(res.data).length > 0) setAiConfig(res.data); 
+    } catch (e) {} 
+  };
+  
   const fetchAuditLogs = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/audit-logs?userId=${userId}`); setAuditLogs(res.data); } catch (e) {} };
 
   const createNewFolder = async () => {
@@ -90,28 +104,20 @@ function App() {
 
   const handleNotifyEventLINE = async () => {
     if (!newEvent._id) return;
-    try {
-      await axios.post('https://line-file-manager.onrender.com/api/notify/event', { eventTitle: newEvent.title, eventDate: newEvent.date, userId: dbUser.lineId });
-      alert("🔔 ส่งการแจ้งเตือนลง LINE ของคุณเรียบร้อยแล้ว!"); fetchAuditLogs(dbUser.lineId);
-    } catch (e) { alert("❌ ส่งแจ้งเตือนไม่สำเร็จ"); }
+    try { await axios.post('https://line-file-manager.onrender.com/api/notify/event', { eventTitle: newEvent.title, eventDate: newEvent.date, userId: dbUser.lineId }); alert("🔔 ส่งการแจ้งเตือนลง LINE ของคุณเรียบร้อยแล้ว!"); fetchAuditLogs(dbUser.lineId); } catch (e) { alert("❌ ส่งแจ้งเตือนไม่สำเร็จ"); }
   };
 
   const handleBroadcast = async () => {
     if (!broadcastMsg.trim()) return alert("กรุณาพิมพ์ข้อความ");
     if (!window.confirm("📢 ยืนยันการส่งประกาศหาทุกคนในระบบ?")) return;
     setIsBroadcasting(true);
-    try {
-      await axios.post('https://line-file-manager.onrender.com/api/admin/broadcast', { message: broadcastMsg, adminId: dbUser.lineId });
-      alert("✅ ส่งประกาศสำเร็จ!"); setBroadcastMsg(''); fetchAuditLogs(dbUser.lineId);
-    } catch (e) { alert("❌ บรอดแคสต์ล้มเหลว"); } finally { setIsBroadcasting(false); }
+    try { await axios.post('https://line-file-manager.onrender.com/api/admin/broadcast', { message: broadcastMsg, adminId: dbUser.lineId }); alert("✅ ส่งประกาศสำเร็จ!"); setBroadcastMsg(''); fetchAuditLogs(dbUser.lineId); } catch (e) { alert("❌ บรอดแคสต์ล้มเหลว"); } finally { setIsBroadcasting(false); }
   };
 
   const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
   const handlePrevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-  
-  // 🟢 แก้ไขปัญหาวันที่เลื่อนด้วยการใช้ไทม์โซนท้องถิ่น (en-CA = YYYY-MM-DD)
   const selectedDateString = selectedDate.toLocaleDateString('en-CA');
   const eventsOnSelectedDate = events.filter(ev => ev.date === selectedDateString);
 
@@ -121,7 +127,7 @@ function App() {
     const file = event.target.files[0]; if (!file) return; setIsUploading(true);
     const formData = new FormData(); formData.append('file', file); formData.append('ownerId', dbUser.lineId); formData.append('userName', profile.displayName);
     if (currentFolder) formData.append('folderId', currentFolder._id);
-    try { const res = await axios.post('https://line-file-manager.onrender.com/api/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }}); fetchMedia(dbUser.lineId); alert('✅ จัดการอัปโหลดไฟล์สำเร็จ!'); fetchAuditLogs(dbUser.lineId); } catch (err) {} finally { setIsUploading(false); }
+    try { await axios.post('https://line-file-manager.onrender.com/api/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }}); fetchMedia(dbUser.lineId); alert('✅ จัดการอัปโหลดไฟล์สำเร็จ!'); fetchAuditLogs(dbUser.lineId); } catch (err) {} finally { setIsUploading(false); }
   };
   
   const saveFileDetails = async () => {
@@ -133,24 +139,25 @@ function App() {
   };
   const deleteFile = async () => { if (window.confirm('⚠️ ลบไฟล์นี้ถาวร?')) { await axios.delete(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`); setMediaFiles(mediaFiles.filter(f => f._id !== selectedFile._id)); setSelectedFile(null); fetchAuditLogs(dbUser.lineId); } };
   
-  // 🟢 อัปเกรดระบบดาวน์โหลดไม้ตายสูงสุด: บังคับแปลงลิงก์เป็น Attachment ดักหน้าขาวใน LINE
+  // 🟢 อัปเกรดระบบดาวน์โหลด แก้บั๊ก PDF หน้าขาวในแอป LINE ถาวร
   const handleDownload = async (url, fileName) => {
-    let downloadUrl = url;
-    if (url.includes('cloudinary.com') && !url.includes('fl_attachment')) {
-      downloadUrl = url.replace('/upload/', '/upload/fl_attachment/');
-    }
-
-    if (liff.isInClient()) {
-      liff.openWindow({ url: downloadUrl, external: true });
-    } else {
-      try {
-        const response = await fetch(downloadUrl); const blob = await response.blob();
-        const blobUrl = window.URL.createObjectURL(blob);
-        const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || 'download';
-        document.body.appendChild(link); link.click(); document.body.removeChild(link); window.URL.revokeObjectURL(blobUrl);
-      } catch (err) { window.open(downloadUrl, '_blank'); }
+    if (liff.isInClient()) { 
+      // ใน LINE ไม่ต้องบังคับโหลด ให้เปิดลิงก์ตรงๆ เบราว์เซอร์มันจะจัดการแสดงผลเอง
+      liff.openWindow({ url: url, external: true }); 
+    } else { 
+      try { 
+        let downloadUrl = url;
+        if (downloadUrl.includes('cloudinary.com') && !downloadUrl.includes('fl_attachment')) {
+          downloadUrl = downloadUrl.replace('/upload/', '/upload/fl_attachment/');
+        }
+        const response = await fetch(downloadUrl); const blob = await response.blob(); 
+        const blobUrl = window.URL.createObjectURL(blob); 
+        const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || 'download'; 
+        document.body.appendChild(link); link.click(); document.body.removeChild(link); window.URL.revokeObjectURL(blobUrl); 
+      } catch (err) { window.open(url, '_blank'); } 
     }
   };
+  const saveConfig = async () => { try { await axios.post('https://line-file-manager.onrender.com/api/admin/config', { userId: dbUser.lineId, ...aiConfig }); alert('✅ บันทึกแล้ว!'); } catch (err) {} };
 
   const currentFolderFiles = mediaFiles.filter(file => !currentFolder ? !file.folderId : file.folderId === currentFolder._id);
   const allTags = [...new Set(mediaFiles.flatMap(file => file.tags || []))];
@@ -176,7 +183,6 @@ function App() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
-      {/* Modal ปฏิทิน */}
       {showEventModal && (
         <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black bg-opacity-60 transition-opacity backdrop-blur-sm">
           <div className="bg-[#1c1c1e] md:bg-white md:text-black text-white w-full md:max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden animate-slide-up">
@@ -190,10 +196,7 @@ function App() {
               </div>
               <div className="bg-[#2c2c2e] md:bg-gray-50 rounded-xl overflow-hidden"><textarea placeholder="เพิ่มโน้ต..." className="w-full bg-transparent p-4 outline-none text-white md:text-black text-sm resize-none min-h-[100px]" value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})}></textarea></div>
               {newEvent._id && (
-                 <div className="flex gap-2 mt-4">
-                    <button onClick={handleNotifyEventLINE} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">🔔 แจ้งเตือนลง LINE</button>
-                    <button onClick={() => handleDeleteEvent(newEvent._id)} className="w-16 bg-red-900 bg-opacity-30 md:bg-red-50 text-red-500 rounded-xl flex items-center justify-center text-xl">🗑️</button>
-                 </div>
+                 <div className="flex gap-2 mt-4"><button onClick={handleNotifyEventLINE} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">🔔 แจ้งเตือนลง LINE</button><button onClick={() => handleDeleteEvent(newEvent._id)} className="w-16 bg-red-900 bg-opacity-30 md:bg-red-50 text-red-500 rounded-xl flex items-center justify-center text-xl">🗑️</button></div>
               )}
             </div>
           </div>
@@ -205,7 +208,8 @@ function App() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm">
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]">
             <div className="flex-1 bg-gray-100 flex items-center justify-center relative min-h-[300px] group">
-              {selectedFile.fileType === 'image' ? (
+              {/* 🟢 เรียกใช้ฟังก์ชันตรวจสอบรูป/PDF ที่ปลอดภัยที่สุด */}
+              {isImageFile(selectedFile) ? (
                 <><img src={selectedFile.fileUrl} alt="full" className="max-w-full max-h-[50vh] md:max-h-[90vh] object-contain" /><button onClick={() => handleDownload(selectedFile.fileUrl, selectedFile.fileName || `image_${Date.now()}.jpg`)} className="absolute bottom-4 left-4 bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-white py-2 px-4 rounded-xl shadow-lg transition-all flex items-center gap-2">⬇️ บันทึกรูปภาพ</button></>
               ) : (
                 <div className="text-center p-8"><span className="text-8xl mb-4 block">📄</span><button onClick={() => handleDownload(selectedFile.fileUrl, selectedFile.fileName || `file_${Date.now()}.pdf`)} className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-xl transition-colors shadow-sm">⬇️ ดาวน์โหลดไฟล์นี้</button></div>
@@ -241,7 +245,7 @@ function App() {
           <li onClick={() => { setShowCalendar(false); setSelectedTag('Logs'); setCurrentFolder(null); }} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'Logs' ? 'bg-amber-50 text-amber-700' : 'text-gray-600 hover:bg-gray-100'}`}>📜 บันทึกประวัติระบบ</li>
           <div className="my-4 border-t border-gray-200"></div>
           {allTags.map((tag, index) => <li key={index} onClick={() => { setShowCalendar(false); setSelectedTag(tag); setCurrentFolder(null); }} className={`p-3 rounded-xl font-medium cursor-pointer flex items-center gap-3 transition-colors ${!showCalendar && selectedTag === tag ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>🏷️ {tag}</li>)}
-          {dbUser?.role === 'admin' && <><div className="my-4 border-t border-gray-200"></div><li onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); }} className={`p-3 rounded-xl font-bold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'Admin' ? 'bg-indigo-50 text-indigo-700' : 'text-indigo-500 hover:bg-indigo-50'}`}>⚙️ ศูนย์ควบคุม (Admin)</li></>}
+          {dbUser?.role === 'admin' && <><div className="my-4 border-t border-gray-200"></div><li onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); setCurrentFolder(null); }} className={`p-3 rounded-xl font-bold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'Admin' ? 'bg-indigo-50 text-indigo-700' : 'text-indigo-500 hover:bg-indigo-50'}`}>⚙️ ศูนย์ควบคุม (Admin)</li></>}
         </ul>
       </div>
 
@@ -256,7 +260,7 @@ function App() {
           {profile && <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-gray-200 shrink-0"><span className="text-sm font-semibold text-gray-700 hidden sm:block">{profile.displayName}</span><img src={profile.pictureUrl} alt="profile" className="w-8 h-8 rounded-full border-2 border-green-500 shadow-sm" /></div>}
         </header>
 
-        {/* เมนูมือถือ */}
+        {/* 🟢 เมนูมือถือ: เพิ่ม setCurrentFolder(null) ให้ปุ่ม Admin เพื่อกันการแครชของหน้าเว็บ */}
         <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex flex-col gap-3 shadow-sm z-0">
            {!showCalendar && selectedTag !== 'Admin' && selectedTag !== 'Logs' && <input type="search" placeholder="🔍 ค้นหา..." className="w-full bg-gray-100 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />}
           <div className="flex overflow-x-auto gap-2 pb-1">
@@ -264,9 +268,8 @@ function App() {
             <button onClick={() => setShowCalendar(true)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${showCalendar ? 'bg-red-500 text-white' : 'bg-gray-50 text-gray-600'}`}>📅 ปฏิทิน</button>
             <button onClick={() => { setShowCalendar(false); setSelectedTag('Logs'); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${selectedTag === 'Logs' ? 'bg-amber-500 text-white' : 'bg-gray-50 text-gray-600'}`}>📜 ประวัติ</button>
             {allTags.map((tag, i) => <button key={i} onClick={() => { setShowCalendar(false); setSelectedTag(tag); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${!showCalendar && selectedTag === tag ? 'bg-green-500 text-white' : 'bg-gray-50 text-gray-600'}`}>🏷️ {tag}</button>)}
-            {/* 🟢 ปุ่มแอดมินบนมือถือ กลับมาแสดงผลอย่างถูกต้องตามสิทธิ์จริง */}
             {dbUser?.role === 'admin' && (
-              <button onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold border ${selectedTag === 'Admin' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>⚙️ แอดมิน</button>
+              <button onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold border ${selectedTag === 'Admin' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>⚙️ แอดมิน</button>
             )}
           </div>
         </div>
@@ -307,14 +310,16 @@ function App() {
                 <textarea rows="3" placeholder="พิมพ์ข้อความประกาศที่นี่..." className="w-full p-4 border border-gray-300 rounded-xl mb-4" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)}></textarea>
                 <button onClick={handleBroadcast} disabled={isBroadcasting} className={`w-full font-bold py-3 rounded-xl text-white ${isBroadcasting ? 'bg-gray-300' : 'bg-blue-600'}`}>{isBroadcasting ? '⏳ กำลังส่ง...' : '🚀 ส่งประกาศ Broadcast'}</button>
               </div>
+              
+              {/* 🟢 อัปเกรดระบบตั้งค่า ป้องกันจอขาวเด็ดขาดด้วย Optional Chaining */}
               <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
                 <h2 className="text-2xl font-bold text-gray-800 mb-6">⚙️ ตั้งค่าระบบผู้ช่วย AI</h2>
                 <div className="mb-6 flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
                   <div><h3 className="font-semibold text-gray-700">เปิดใช้งาน AI สรุปเอกสาร</h3></div>
-                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={aiConfig.aiEnabled} onChange={(e) => setAiConfig({...aiConfig, aiEnabled: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-green-500"></div></label>
+                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={aiConfig?.aiEnabled || false} onChange={(e) => setAiConfig({...aiConfig, aiEnabled: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-green-500"></div></label>
                 </div>
-                <textarea rows="4" className="w-full p-4 border border-gray-300 rounded-xl mb-4" value={aiConfig.aiPrompt} onChange={e => setAiConfig({...aiConfig, aiPrompt: e.target.value})} disabled={!aiConfig.aiEnabled}></textarea>
-                <input type="text" className="w-full p-4 border border-gray-300 rounded-xl mb-6 font-mono" value={aiConfig.aiModel || ''} onChange={e => setAiConfig({...aiConfig, aiModel: e.target.value})} disabled={!aiConfig.aiEnabled} />
+                <textarea rows="4" className="w-full p-4 border border-gray-300 rounded-xl mb-4" value={aiConfig?.aiPrompt || ''} onChange={e => setAiConfig({...aiConfig, aiPrompt: e.target.value})} disabled={!aiConfig?.aiEnabled}></textarea>
+                <input type="text" className="w-full p-4 border border-gray-300 rounded-xl mb-6 font-mono" value={aiConfig?.aiModel || ''} onChange={e => setAiConfig({...aiConfig, aiModel: e.target.value})} disabled={!aiConfig?.aiEnabled} />
                 <button onClick={saveConfig} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl">💾 บันทึกการตั้งค่า AI</button>
               </div>
             </div>
@@ -350,6 +355,7 @@ function App() {
                 )}
               </div>
 
+              {/* หน้าไฟล์ (ใช้ฟังก์ชัน isImageFile แยกแยะ) */}
               <h3 className="text-sm font-bold text-gray-500 mb-4 border-t border-gray-200 pt-6">📄 ไฟล์เอกสารและรูปภาพ ({displayedFiles.length})</h3>
               {displayedFiles.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-gray-400"><span className="text-6xl mb-4">📭</span><p>ไม่พบไฟล์</p></div>
@@ -357,7 +363,7 @@ function App() {
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
                   {displayedFiles.map((item) => (
                     <div key={item._id} onClick={() => { setSelectedFile(item); setEditForm({ tags: item.tags?.join(', ') || '', note: item.note || '', folderId: item.folderId || null, fileName: item.fileName || '' }); setIsEditing(false); }} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg cursor-pointer flex flex-col">
-                      {item.fileType === 'image' ? (
+                      {isImageFile(item) ? (
                         <div className="h-32 md:h-40 bg-gray-100 relative"><img src={item.fileUrl} alt="upload" className="w-full h-full object-cover" /></div>
                       ) : (
                         <div className="h-32 md:h-40 bg-blue-50 flex flex-col items-center justify-center p-4"><span className="text-4xl mb-2">📄</span><p className="text-xs text-center font-medium text-gray-600 line-clamp-2">{item.fileName}</p></div>
