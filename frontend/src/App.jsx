@@ -61,7 +61,7 @@ function App() {
           setProfile(userProfile);
           const res = await axios.post('https://line-file-manager.onrender.com/api/users', { lineId: userProfile.userId, displayName: userProfile.displayName, pictureUrl: userProfile.pictureUrl });
           setDbUser(res.data); fetchMedia(userProfile.userId); fetchEvents(userProfile.userId); fetchAuditLogs(userProfile.userId);
-          fetchConfig(); // 🟢 ดึง Config มาให้ทุกคน เพื่อให้รู้ Group ID
+          fetchConfig(); 
         }
         setIsReady(true);
       } catch (err) { console.error(err); setIsReady(true); }
@@ -81,7 +81,6 @@ function App() {
   const handleRenameFolder = async () => { if (!editFolderName.trim()) return; try { const res = await axios.put(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`, { name: editFolderName }); setCurrentFolder(res.data); setIsEditingFolder(false); fetchAuditLogs(dbUser.lineId); } catch (e) {} };
   const handleDeleteFolder = async () => { if (window.confirm('⚠️ ลบโฟลเดอร์นี้?\n(ไฟล์ข้างในจะไม่หาย แต่จะถูกย้ายไปหน้าแรก)')) { try { await axios.delete(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`); setCurrentFolder(null); setIsEditingFolder(false); fetchMedia(dbUser.lineId); fetchAuditLogs(dbUser.lineId); } catch (e) {} } };
 
-  // 🟢 ระบบบันทึกปฏิทินที่แก้บั๊กวันที่หายแล้ว
   const handleSaveEvent = async () => {
     if (!newEvent.title) return alert("กรุณาใส่ชื่อกิจกรรม");
     try {
@@ -100,7 +99,6 @@ function App() {
   const handleDeleteEvent = async (id) => { if(window.confirm("ลบกิจกรรมนี้?")) { await axios.delete(`https://line-file-manager.onrender.com/api/events/${id}`); setEvents(events.filter(e => e._id !== id)); setShowEventModal(false); fetchAuditLogs(dbUser.lineId); } };
   const openEditEventModal = (ev) => { setNewEvent(ev); setShowEventModal(true); };
 
-  // 🟢 ฟังก์ชันส่งแจ้งเตือนแบบเลือกได้ (ส่วนตัว หรือ กลุ่ม)
   const handleNotifyEventLINE = async (type) => {
     if (!newEvent._id) return;
     try {
@@ -113,7 +111,6 @@ function App() {
     } catch (e) { alert("❌ แจ้งเตือนไม่สำเร็จ (ตั้งค่า Group ID หรือยัง?)"); }
   };
 
-  // 🟢 ฟังก์ชัน Broadcast เลือกได้ว่าส่งหาทุกคน หรือส่งเข้ากลุ่ม
   const handleBroadcast = async (type) => {
     if (!broadcastMsg.trim()) return alert("กรุณาพิมพ์ข้อความ");
     if (!window.confirm(`📢 ยืนยันการส่งประกาศหา${type === 'all' ? 'ทุกคนในระบบ' : 'กลุ่ม'}?`)) return;
@@ -140,7 +137,30 @@ function App() {
   const handleFileUpload = async (event) => { const file = event.target.files[0]; if (!file) return; setIsUploading(true); const formData = new FormData(); formData.append('file', file); formData.append('ownerId', dbUser.lineId); formData.append('userName', profile.displayName); if (currentFolder) formData.append('folderId', currentFolder._id); try { await axios.post('https://line-file-manager.onrender.com/api/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' }}); fetchMedia(dbUser.lineId); alert('✅ จัดการอัปโหลดไฟล์สำเร็จ!'); fetchAuditLogs(dbUser.lineId); } catch (err) {} finally { setIsUploading(false); } };
   const saveFileDetails = async () => { try { const tagArray = editForm.tags.split(',').map(t => t.trim()).filter(t => t); const formattedTags = tagArray.map(tag => tag.startsWith('#') ? tag : `#${tag}`); await axios.put(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`, { tags: formattedTags, note: editForm.note, folderId: editForm.folderId, fileName: editForm.fileName }); fetchMedia(dbUser.lineId); setIsEditing(false); fetchAuditLogs(dbUser.lineId); setSelectedFile(null); } catch (err) {} };
   const deleteFile = async () => { if (window.confirm('⚠️ ลบไฟล์นี้ถาวร?')) { await axios.delete(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`); setMediaFiles(mediaFiles.filter(f => f._id !== selectedFile._id)); setSelectedFile(null); fetchAuditLogs(dbUser.lineId); } };
-  const handleDownload = async (url, fileName) => { if (liff.isInClient()) { liff.openWindow({ url: url, external: true }); } else { try { let downloadUrl = url; if (downloadUrl.includes('cloudinary.com') && !downloadUrl.includes('fl_attachment')) downloadUrl = downloadUrl.replace('/upload/', '/upload/fl_attachment/'); const response = await fetch(downloadUrl); const blob = await response.blob(); const blobUrl = window.URL.createObjectURL(blob); const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || 'download'; document.body.appendChild(link); link.click(); document.body.removeChild(link); window.URL.revokeObjectURL(blobUrl); } catch (err) { window.open(url, '_blank'); } } };
+  
+  // 🟢 แก้บั๊ก PDF ไฟล์พังถาวร (เปิดลิงก์ตรงแทนการใช้ fetch)
+  const handleDownload = (url, fileName) => {
+    let downloadUrl = url;
+    // บังคับแปลงลิงก์ให้เป็นแบบดาวน์โหลดตรง (Attachment)
+    if (downloadUrl.includes('cloudinary.com') && !downloadUrl.includes('fl_attachment')) {
+      downloadUrl = downloadUrl.replace('/upload/', '/upload/fl_attachment/');
+    }
+
+    if (liff.isInClient()) {
+      // โหลดในแอป LINE ให้เด้งไปเบราว์เซอร์ภายนอกเพื่อดาวน์โหลด
+      liff.openWindow({ url: downloadUrl, external: true });
+    } else {
+      // โหลดบนเว็บ (คอม/มือถือ) ให้จำลองการคลิกลิงก์ดาวน์โหลดตรงๆ (ป้องกัน CORS ไฟล์พัง)
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.target = '_blank'; // เปิดหน้าต่างใหม่
+      link.download = fileName || 'download';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
   const saveConfig = async () => { try { await axios.post('https://line-file-manager.onrender.com/api/admin/config', { userId: dbUser.lineId, ...aiConfig }); alert('✅ บันทึกตั้งค่าสำเร็จ!'); } catch (err) {} };
 
   const currentFolderFiles = mediaFiles.filter(file => !currentFolder ? !file.folderId : file.folderId === currentFolder._id);
@@ -166,7 +186,7 @@ function App() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
-      {/* 🟢 Modal จัดการกิจกรรม (เพิ่มปุ่มแจ้งเตือนส่วนตัว/กลุ่ม แบบชัดเจน) */}
+      {/* Modal จัดการกิจกรรม */}
       {showEventModal && (
         <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black bg-opacity-60 transition-opacity backdrop-blur-sm">
           <div className="bg-[#1c1c1e] md:bg-white md:text-black text-white w-full md:max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
@@ -181,7 +201,6 @@ function App() {
               </div>
               <div className="bg-[#2c2c2e] md:bg-gray-50 rounded-xl overflow-hidden"><textarea placeholder="เพิ่มโน้ต..." className="w-full bg-transparent p-4 outline-none text-white md:text-black text-sm resize-none min-h-[80px]" value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})}></textarea></div>
               
-              {/* 🟢 คอนโซลควบคุมเมื่อมีกิจกรรมแล้ว */}
               {newEvent._id && (
                  <div className="mt-4 pt-4 border-t border-gray-700 md:border-gray-200 flex flex-col gap-2 shrink-0 pb-4">
                     <p className="text-xs text-center text-gray-400 mb-1">📢 แจ้งเตือนบอท LINE</p>
@@ -199,21 +218,19 @@ function App() {
         </div>
       )}
 
-      {/* Modal ดูไฟล์ (ดั้งเดิม) */}
+      {/* Modal ดูไฟล์/โหลด PDF */}
       {selectedFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm"><div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]"><div className="flex-1 bg-gray-100 flex items-center justify-center relative min-h-[300px] group">{isImageFile(selectedFile) ? (<><img src={selectedFile.fileUrl} alt="full" className="max-w-full max-h-[50vh] md:max-h-[90vh] object-contain" /><button onClick={() => handleDownload(selectedFile.fileUrl, selectedFile.fileName || `image_${Date.now()}.jpg`)} className="absolute bottom-4 left-4 bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-white py-2 px-4 rounded-xl shadow-lg transition-all flex items-center gap-2">⬇️ บันทึกรูปภาพ</button></>) : (<div className="text-center p-8"><span className="text-8xl mb-4 block">📄</span><button onClick={() => handleDownload(selectedFile.fileUrl, selectedFile.fileName || `file_${Date.now()}.pdf`)} className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-xl transition-colors shadow-sm">⬇️ ดาวน์โหลดไฟล์นี้</button></div>)}<button onClick={() => { setSelectedFile(null); setIsEditing(false); }} className="absolute top-4 right-4 bg-white text-gray-800 rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-gray-200 font-black text-xl border-2 border-gray-100">✕</button></div><div className="w-full md:w-96 p-6 flex flex-col bg-white overflow-y-auto border-l border-gray-100"><div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-gray-800">รายละเอียด <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">v{selectedFile.version}</span></h3>{!isEditing ? (<div className="flex gap-2"><button onClick={() => handleShareFile(selectedFile.fileUrl)} className="text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg font-bold">🔗 แชร์</button><button onClick={() => setIsEditing(true)} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-bold">✏️ แก้ไข</button></div>) : (<div className="flex gap-2"><button onClick={() => setIsEditing(false)} className="text-sm bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold">ยกเลิก</button><button onClick={saveFileDetails} className="text-sm bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg font-bold">💾 บันทึก</button></div>)}</div><div className="mb-4">{isEditing ? <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm font-bold focus:ring-2 focus:ring-green-500 outline-none mb-1" value={editForm.fileName || ''} onChange={(e) => setEditForm({...editForm, fileName: e.target.value})} /> : <p className="text-sm font-bold text-gray-700 mb-1">{selectedFile.fileName || 'ไม่ได้ตั้งชื่อไฟล์'}</p>}<p className="text-xs text-gray-400">📅 {new Date(selectedFile.createdAt).toLocaleString('th-TH')}</p></div><div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📁 ย้ายแฟ้ม</p>{isEditing ? (<select className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 outline-none" value={editForm.folderId || 'null'} onChange={(e) => setEditForm({...editForm, folderId: e.target.value === 'null' ? null : e.target.value})}><option value="null">🏠 หน้าแรกสุด</option>{folders.map(f => <option key={f._id} value={f._id}>📂 {f.name}</option>)}</select>) : (<div className="bg-gray-50 text-gray-600 text-sm px-3 py-2 rounded-lg border border-gray-200">{folders.find(f => f._id === selectedFile.folderId)?.name ? `📂 ${folders.find(f => f._id === selectedFile.folderId).name}` : '🏠 อยู่ในหน้าแรกสุด'}</div>)}</div><div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">🏷️ แท็ก</p>{isEditing ? <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none" value={editForm.tags} onChange={(e) => setEditForm({...editForm, tags: e.target.value})} /> : <div className="flex flex-wrap gap-2">{selectedFile.tags?.map((t, i) => <span key={i} className="bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-md font-medium border border-indigo-100">{t}</span>)}</div>}</div><div className="flex-1 flex flex-col"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📝 โน้ต</p>{isEditing ? <textarea className="w-full flex-1 p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none min-h-[80px]" value={editForm.note} onChange={(e) => setEditForm({...editForm, note: e.target.value})}></textarea> : <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 min-h-[80px] whitespace-pre-wrap overflow-y-auto">{selectedFile.note || "-"}</div>}</div>{!isEditing && selectedFile.versions && selectedFile.versions.length > 0 && (<div className="mb-4 border-t border-gray-200 pt-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">⏳ เวอร์ชันย้อนหลัง ({selectedFile.versions.length})</p><div className="space-y-2 max-h-[120px] overflow-y-auto">{selectedFile.versions.map((v, idx) => (<div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg text-xs border border-gray-100"><span className="text-gray-600 font-medium">เวอร์ชัน v{v.versionNumber}</span><button onClick={() => handleDownload(v.fileUrl, `v${v.versionNumber}_${selectedFile.fileName}`)} className="text-indigo-600 font-bold hover:underline">⬇️ ดาวน์โหลด</button></div>))}</div></div>)}{isEditing && <button onClick={deleteFile} className="mt-4 text-sm bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-bold w-full border border-red-200">🗑️ ลบไฟล์นี้ถาวร</button>}</div></div></div>
       )}
 
-      {/* Sidebar คอม (แก้บั๊กกดเมนูแล้วหน้าค้าง โดยการเซ็ตให้ selectedTag ว่างเปล่าตอนกดปฏิทิน) */}
+      {/* Sidebar คอม */}
       <div className="w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col hidden md:flex">
         <div className="p-6 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => { setShowCalendar(false); setSelectedTag('All'); setCurrentFolder(null); }}>
           <h2 className="text-2xl font-black text-green-600 tracking-tight">📁 Drive</h2>
         </div>
         <ul className="flex-1 px-4 space-y-2 overflow-y-auto">
           <li onClick={() => { setShowCalendar(false); setSelectedTag('All'); setCurrentFolder(null); }} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${!showCalendar && selectedTag === 'All' && !currentFolder ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>📥 หน้าแรก (Home)</li>
-          
           <li onClick={() => { setShowCalendar(true); setSelectedTag(''); setCurrentFolder(null); }} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${showCalendar ? 'bg-red-50 text-red-600' : 'text-gray-600 hover:bg-gray-100'}`}>📅 ปฏิทินทีม</li>
-          
           <li onClick={() => { setShowCalendar(false); setSelectedTag('Logs'); setCurrentFolder(null); }} className={`p-3 rounded-xl font-semibold cursor-pointer flex items-center gap-3 transition-colors ${selectedTag === 'Logs' ? 'bg-amber-50 text-amber-700' : 'text-gray-600 hover:bg-gray-100'}`}>📜 บันทึกประวัติระบบ</li>
           <div className="my-4 border-t border-gray-200"></div>
           {allTags.map((tag, index) => <li key={index} onClick={() => { setShowCalendar(false); setSelectedTag(tag); setCurrentFolder(null); }} className={`p-3 rounded-xl font-medium cursor-pointer flex items-center gap-3 transition-colors ${!showCalendar && selectedTag === tag ? 'bg-green-50 text-green-700' : 'text-gray-600 hover:bg-gray-100'}`}>🏷️ {tag}</li>)}
@@ -224,7 +241,7 @@ function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm z-10 gap-4">
           <h1 className="text-lg md:text-xl font-bold text-gray-800 ml-2 md:ml-0 flex items-center gap-2 truncate">
-            {showCalendar ? '📅 ปฏิทินและตารางงาน' : selectedTag === 'Admin' ? '⚙️ ศูนย์ควบคุม (Admin)' : selectedTag === 'Logs' ? '📜 บันทึกระบบ (Audit Log)' : (
+            {showCalendar ? '📅 ปฏิทินและตารางงาน' : selectedTag === 'Admin' ? '⚙️ ศูนย์ควบคุมระบบ (Admin Center)' : selectedTag === 'Logs' ? '📜 บันทึกประวัติการใช้งานระบบ (Audit Log)' : (
               <>{currentFolder && <><button onClick={() => setCurrentFolder(null)} className="text-gray-400 hover:text-green-600 transition-colors">🏠 หน้าแรก</button><span className="text-gray-300">/</span></>}<span className="text-green-700 truncate flex items-center gap-2">{currentFolder ? `📁 ${currentFolder.name}` : (selectedTag === 'All' ? '📥 หน้าแรก' : `🏷️ ${selectedTag}`)}{currentFolder && (<button onClick={() => {setIsEditingFolder(true); setEditFolderName(currentFolder.name);}} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded-md ml-2 transition-colors">⚙️ จัดการ</button>)}</span></>
             )}
           </h1>
@@ -254,19 +271,8 @@ function App() {
             <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-6">
               <div className="flex-1 bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-200">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 px-2 gap-4">
-                  {/* 🟢 อัปเกรด: กล่องเลือกเดือน/ปี แบบรวดเร็วปานสายฟ้า */}
                   <div className="flex items-center gap-2">
-                     <input 
-                       type="month" 
-                       className="px-3 py-2 border border-gray-300 rounded-xl text-lg font-bold text-gray-800 outline-none focus:ring-2 focus:ring-red-500 bg-gray-50"
-                       value={`${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`}
-                       onChange={(e) => {
-                         if(e.target.value) {
-                           const [y, m] = e.target.value.split('-');
-                           setCurrentMonth(new Date(y, m - 1, 1));
-                         }
-                       }}
-                     />
+                     <input type="month" className="px-3 py-2 border border-gray-300 rounded-xl text-lg font-bold text-gray-800 outline-none focus:ring-2 focus:ring-red-500 bg-gray-50" value={`${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`} onChange={(e) => { if(e.target.value) { const [y, m] = e.target.value.split('-'); setCurrentMonth(new Date(y, m - 1, 1)); } }} />
                   </div>
                   <div className="flex gap-4"><button onClick={handlePrevMonth} className="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-500 font-bold text-xl px-4 py-1.5 rounded-xl transition-colors">{"<"}</button><button onClick={handleNextMonth} className="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-500 font-bold text-xl px-4 py-1.5 rounded-xl transition-colors">{">"}</button></div>
                 </div>
@@ -284,44 +290,21 @@ function App() {
             </div>
           ) : selectedTag === 'Admin' ? (
             <div className="max-w-3xl mx-auto space-y-6">
-              
-              {/* 🟢 อัปเกรด: หน้าจอจัดการการตั้งค่า และตั้งค่า Group ID */}
               <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
                 <h2 className="text-2xl font-bold text-gray-800 mb-6">⚙️ ตั้งค่าระบบ (System Settings)</h2>
-                
-                <div className="mb-6 p-4 border border-blue-100 bg-blue-50 rounded-xl">
-                  <label className="block text-sm font-bold text-gray-800 mb-1">📢 LINE Group ID (สำหรับแจ้งเตือนเข้ากลุ่ม)</label>
-                  <p className="text-xs text-gray-500 mb-3">เมื่อใส่รหัสนี้ แอดมินและทุกคนจะสามารถกดปุ่ม "แจ้งลงกลุ่ม" จากในปฏิทินได้</p>
-                  <input type="text" placeholder="เช่น C1234567890abcdef..." className="w-full p-3 border border-gray-300 rounded-xl font-mono text-sm outline-none focus:ring-2 focus:ring-blue-500" value={aiConfig?.lineGroupId || ''} onChange={e => setAiConfig({...aiConfig, lineGroupId: e.target.value})} />
-                </div>
-
-                <div className="mb-6 flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
-                  <div><h3 className="font-semibold text-gray-700">เปิดใช้งานระบบผู้ช่วย AI (Gemini)</h3></div>
-                  <label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={aiConfig?.aiEnabled || false} onChange={(e) => setAiConfig({...aiConfig, aiEnabled: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-green-500"></div></label>
-                </div>
-                <textarea rows="3" className="w-full p-4 border border-gray-300 rounded-xl mb-4 text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={aiConfig?.aiPrompt || ''} onChange={e => setAiConfig({...aiConfig, aiPrompt: e.target.value})} disabled={!aiConfig?.aiEnabled} placeholder="System Prompt..."></textarea>
-                <input type="text" className="w-full p-4 border border-gray-300 rounded-xl mb-6 font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={aiConfig?.aiModel || ''} onChange={e => setAiConfig({...aiConfig, aiModel: e.target.value})} disabled={!aiConfig?.aiEnabled} placeholder="Model Name (e.g. gemini-1.5-flash)" />
-                <button onClick={saveConfig} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors shadow-sm">💾 บันทึกการตั้งค่าทั้งหมด</button>
+                <div className="mb-6 p-4 border border-blue-100 bg-blue-50 rounded-xl"><label className="block text-sm font-bold text-gray-800 mb-1">📢 LINE Group ID (สำหรับแจ้งเตือนเข้ากลุ่ม)</label><p className="text-xs text-gray-500 mb-3">เมื่อใส่รหัสนี้ แอดมินและทุกคนจะสามารถกดปุ่ม "แจ้งลงกลุ่ม" จากในปฏิทินได้</p><input type="text" placeholder="เช่น C1234567890abcdef..." className="w-full p-3 border border-gray-300 rounded-xl font-mono text-sm outline-none focus:ring-2 focus:ring-blue-500" value={aiConfig?.lineGroupId || ''} onChange={e => setAiConfig({...aiConfig, lineGroupId: e.target.value})} /></div>
+                <div className="mb-6 flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100"><div><h3 className="font-semibold text-gray-700">เปิดใช้งานระบบผู้ช่วย AI (Gemini)</h3></div><label className="relative inline-flex items-center cursor-pointer"><input type="checkbox" className="sr-only peer" checked={aiConfig?.aiEnabled || false} onChange={(e) => setAiConfig({...aiConfig, aiEnabled: e.target.checked})} /><div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-green-500"></div></label></div><textarea rows="3" className="w-full p-4 border border-gray-300 rounded-xl mb-4 text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={aiConfig?.aiPrompt || ''} onChange={e => setAiConfig({...aiConfig, aiPrompt: e.target.value})} disabled={!aiConfig?.aiEnabled} placeholder="System Prompt..."></textarea><input type="text" className="w-full p-4 border border-gray-300 rounded-xl mb-6 font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" value={aiConfig?.aiModel || ''} onChange={e => setAiConfig({...aiConfig, aiModel: e.target.value})} disabled={!aiConfig?.aiEnabled} placeholder="Model Name (e.g. gemini-1.5-flash)" /><button onClick={saveConfig} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors shadow-sm">💾 บันทึกการตั้งค่าทั้งหมด</button>
               </div>
-
-              {/* 🟢 อัปเกรด: หน้าจอกระจายข่าวสาร เลือกได้ว่าจะส่งหาทุกคน หรือลงกลุ่ม */}
               <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">📢 กระจายข่าวสาร (Broadcast / Push)</h2>
                 <p className="text-sm text-gray-500 mb-4">เลือกส่งข้อความหาผู้ใช้ทุกคน (Broadcast) หรือส่งเข้ากลุ่มเฉพาะ (Group Push)</p>
                 <textarea rows="3" placeholder="พิมพ์ข้อความประกาศที่นี่..." className="w-full p-4 border border-gray-300 rounded-xl mb-4 outline-none focus:ring-2 focus:ring-blue-500" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)}></textarea>
-                
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <button onClick={() => handleBroadcast('all')} disabled={isBroadcasting} className={`flex-1 font-bold py-3 rounded-xl text-white transition-colors ${isBroadcasting ? 'bg-gray-300' : 'bg-blue-600 hover:bg-blue-700'}`}>🚀 ส่งหาทุกคน (Broadcast)</button>
-                  {aiConfig?.lineGroupId && (
-                     <button onClick={() => handleBroadcast('group')} disabled={isBroadcasting} className={`flex-1 font-bold py-3 rounded-xl text-white transition-colors ${isBroadcasting ? 'bg-gray-300' : 'bg-green-600 hover:bg-green-700'}`}>📢 ส่งเข้ากลุ่มแชท (Group)</button>
-                  )}
-                </div>
+                <div className="flex flex-col sm:flex-row gap-3"><button onClick={() => handleBroadcast('all')} disabled={isBroadcasting} className={`flex-1 font-bold py-3 rounded-xl text-white transition-colors ${isBroadcasting ? 'bg-gray-300' : 'bg-blue-600 hover:bg-blue-700'}`}>🚀 ส่งหาทุกคน (Broadcast)</button>{aiConfig?.lineGroupId && (<button onClick={() => handleBroadcast('group')} disabled={isBroadcasting} className={`flex-1 font-bold py-3 rounded-xl text-white transition-colors ${isBroadcasting ? 'bg-gray-300' : 'bg-green-600 hover:bg-green-700'}`}>📢 ส่งเข้ากลุ่มแชท (Group)</button>)}</div>
               </div>
-
             </div>
           ) : (
             <>
-              {/* หน้าหลัก Drive (คงเดิม) */}
+              {/* หน้าหลัก Drive */}
               <div className="mb-8">{isEditingFolder && currentFolder && (<div className="mb-6 p-4 bg-gray-100 rounded-xl border border-gray-200 max-w-lg"><h4 className="font-bold mb-3 text-sm text-gray-700">⚙️ จัดการโฟลเดอร์ปัจจุบัน</h4><div className="flex gap-2 mb-3"><input type="text" value={editFolderName} onChange={e => setEditFolderName(e.target.value)} className="flex-1 p-2 rounded-lg border border-gray-300 text-sm outline-none" /><button onClick={handleRenameFolder} className="bg-green-500 text-white px-4 py-2 rounded-lg font-bold text-sm">เปลี่ยนชื่อ</button><button onClick={() => setIsEditingFolder(false)} className="bg-white text-gray-600 border border-gray-300 px-4 py-2 rounded-lg font-bold text-sm">ยกเลิก</button></div><button onClick={handleDeleteFolder} className="text-red-500 text-sm font-bold hover:underline">🗑️ ลบโฟลเดอร์นี้</button></div>)}<div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3"><h3 className="text-sm font-bold text-gray-500">📁 โฟลเดอร์ ({displayedFolders.length})</h3>{!searchQuery && (<div className="flex gap-2"><label className="text-xs bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-bold cursor-pointer">{isUploading ? '⏳ กำลังอัปโหลด...' : '☁️ อัปโหลดไฟล์'}<input type="file" className="hidden" onChange={handleFileUpload} disabled={isUploading} /></label><button onClick={() => setShowNewFolderInput(!showNewFolderInput)} className="text-xs bg-green-100 text-green-700 px-4 py-2 rounded-lg font-bold">+ สร้างแฟ้มใหม่</button></div>)}</div>{showNewFolderInput && !searchQuery && (<div className="flex gap-2 mb-4 bg-white p-3 rounded-xl border border-green-200 shadow-sm max-w-md"><input type="text" autoFocus value={newFolderName} onChange={(e)=>setNewFolderName(e.target.value)} placeholder="พิมพ์ชื่อแฟ้มใหม่..." className="flex-1 outline-none text-sm bg-transparent" /><button onClick={createNewFolder} className="bg-green-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold">สร้าง</button><button onClick={() => setShowNewFolderInput(false)} className="bg-gray-100 text-gray-600 px-4 py-1.5 rounded-lg text-sm font-bold">ยกเลิก</button></div>)}{displayedFolders.length > 0 && (<div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">{displayedFolders.map(folder => (<div key={folder._id} onClick={() => setCurrentFolder(folder)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 cursor-pointer hover:border-green-400 flex items-center gap-3"><span className="text-2xl">📁</span><span className="font-bold text-gray-700 truncate text-sm">{folder.name}</span></div>))}</div>)}</div>
               <h3 className="text-sm font-bold text-gray-500 mb-4 border-t border-gray-200 pt-6">📄 ไฟล์เอกสารและรูปภาพ ({displayedFiles.length})</h3>{displayedFiles.length === 0 ? (<div className="flex flex-col items-center justify-center py-16 text-gray-400"><span className="text-6xl mb-4">📭</span><p>ไม่พบไฟล์</p></div>) : (<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">{displayedFiles.map((item) => (<div key={item._id} onClick={() => { setSelectedFile(item); setEditForm({ tags: item.tags?.join(', ') || '', note: item.note || '', folderId: item.folderId || null, fileName: item.fileName || '' }); setIsEditing(false); }} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg cursor-pointer flex flex-col">{isImageFile(item) ? (<div className="h-32 md:h-40 bg-gray-100 relative"><img src={item.fileUrl} alt="upload" className="w-full h-full object-cover" /></div>) : (<div className="h-32 md:h-40 bg-blue-50 flex flex-col items-center justify-center p-4"><span className="text-4xl mb-2">📄</span><p className="text-xs text-center font-medium text-gray-600 line-clamp-2">{item.fileName}</p></div>)}<div className="p-3 flex-1 flex flex-col justify-between border-t border-gray-50"><div className="mb-2 flex flex-wrap gap-1">{item.tags?.map((t, i) => <span key={i} className="bg-gray-100 text-gray-500 text-[10px] px-2 py-1 rounded-md">{t}</span>)}</div><div className="flex justify-between items-center mt-1"><small className="text-gray-400 text-[10px]">📅 {new Date(item.createdAt).toLocaleDateString('th-TH')}</small>{item.version > 1 && <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold">v{item.version}</span>}</div></div></div>))}</div>)}
             </>
