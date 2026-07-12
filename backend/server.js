@@ -436,4 +436,44 @@ app.post('/api/admin/push', express.json(), async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// --- 🟢 ทริคพิเศษ: Webhook ดักจับและบอก ID กลุ่ม ---
+app.post('/api/webhook', express.json(), async (req, res) => {
+  try {
+    const events = req.body.events;
+    if (events && events.length > 0) {
+      for (const event of events) {
+        // ถ้ามีการส่งข้อความเข้ามา
+        if (event.type === 'message' && event.message.type === 'text') {
+          const text = event.message.text;
+          const source = event.source;
+
+          // ดักคีย์เวิร์ดลับ
+          if (text === 'ขอไอดีกลุ่ม' || text === 'ไอดีกลุ่ม') {
+            let replyText = `นี่คือแชทส่วนตัวครับ\nUser ID ของคุณคือ:\n${source.userId}`;
+            
+            if (source.type === 'group') {
+              replyText = `📢 Group ID ของกลุ่มนี้คือ:\n${source.groupId}\n\n(ก๊อปปี้ไปใส่ในหน้า Admin ได้เลยครับ!)`;
+            }
+
+            // สั่งบอทตอบกลับ
+            await axios.post('https://api.line.me/v2/bot/message/reply', {
+              replyToken: event.replyToken,
+              messages: [{ type: 'text', text: replyText }]
+            }, {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`
+              }
+            });
+          }
+        }
+      }
+    }
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error("Webhook Error:", error.message);
+    res.status(500).send('Error');
+  }
+});
+
 app.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));

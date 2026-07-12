@@ -139,25 +139,12 @@ function App() {
   const deleteFile = async () => { if (window.confirm('⚠️ ลบไฟล์นี้ถาวร?')) { await axios.delete(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`); setMediaFiles(mediaFiles.filter(f => f._id !== selectedFile._id)); setSelectedFile(null); fetchAuditLogs(dbUser.lineId); } };
   
   // 🟢 แก้บั๊ก PDF ไฟล์พังถาวร (เปิดลิงก์ตรงแทนการใช้ fetch)
+  // 🟢 แก้บั๊ก PDF 401: ให้เปิดแท็บใหม่แทนการดัดแปลงลิงก์
   const handleDownload = (url, fileName) => {
-    let downloadUrl = url;
-    // บังคับแปลงลิงก์ให้เป็นแบบดาวน์โหลดตรง (Attachment)
-    if (downloadUrl.includes('cloudinary.com') && !downloadUrl.includes('fl_attachment')) {
-      downloadUrl = downloadUrl.replace('/upload/', '/upload/fl_attachment/');
-    }
-
     if (liff.isInClient()) {
-      // โหลดในแอป LINE ให้เด้งไปเบราว์เซอร์ภายนอกเพื่อดาวน์โหลด
-      liff.openWindow({ url: downloadUrl, external: true });
+      liff.openWindow({ url: url, external: true });
     } else {
-      // โหลดบนเว็บ (คอม/มือถือ) ให้จำลองการคลิกลิงก์ดาวน์โหลดตรงๆ (ป้องกัน CORS ไฟล์พัง)
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.target = '_blank'; // เปิดหน้าต่างใหม่
-      link.download = fileName || 'download';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      window.open(url, '_blank'); // เปิดแท็บใหม่ ให้เบราว์เซอร์จัดการ PDF เอง
     }
   };
 
