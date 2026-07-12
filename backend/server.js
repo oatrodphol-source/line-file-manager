@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const cloudinary = require('cloudinary').v2;
 const line = require('@line/bot-sdk');
 const { GoogleGenerativeAI } = require("@google/generative-ai"); 
-
+const axios = require('axios');
 const Media = require('./models/Media');
 const User = require('./models/User');
 const SystemConfig = require('./models/SystemConfig');
