@@ -11,6 +11,7 @@ const User = require('./models/User');
 const SystemConfig = require('./models/SystemConfig');
 const Folder = require('./models/Folder'); // 🟢 เพิ่มการเรียกใช้โมเดลโฟลเดอร์
 const Event = require('./models/Event');
+const AuditLog = require('./models/AuditLog');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() }); // ให้เก็บไฟล์ในหน่วยความจำชั่วคราวก่อนส่งขึ้น Cloud
 const app = express();
@@ -272,47 +273,64 @@ app.put('/api/events/:id', express.json(), async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-// --- 🟢 API สำหรับอัปโหลดไฟล์ผ่านหน้าเว็บโดยตรง ---
+// --- 🟢 API สำหรับอัปโหลดไฟล์ผ่านหน้าเว็บ + ระบบตรวจจับเวอร์ชันซ้ำ (Phase 4) ---
 app.post('/api/upload', upload.single('file'), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'ไม่พบไฟล์ที่อัปโหลด' });
 
-    const { ownerId, folderId } = req.body;
-    
-    // ส่งไฟล์ขึ้น Cloudinary
+    const { ownerId, folderId, userName } = req.body;
+    const targetFolderId = folderId === 'null' || !folderId ? null : folderId;
+
     const stream = cloudinary.uploader.upload_stream(
-      { resource_type: 'auto' }, // รับทั้งรูปภาพและ PDF
+      { resource_type: 'auto' },
       async (error, result) => {
         if (error) return res.status(500).json({ error });
 
-        // บันทึกข้อมูลลง MongoDB
-        const newMedia = new Media({
-          fileUrl: result.secure_url,
-          fileType: result.resource_type === 'image' ? 'image' : 'document',
-          fileName: req.file.originalname,
-          ownerId: ownerId,
-          sourceType: 'web',
-          folderId: folderId === 'null' || !folderId ? null : folderId
+        // 🔍 ตรวจสอบว่ามีไฟล์ชื่อนี้ในโฟลเดอร์นี้อยู่แล้วหรือไม่
+        const existingFile = await Media.findOne({ 
+          fileName: req.file.originalname, 
+          folderId: targetFolderId, 
+          ownerId: ownerId 
         });
-        await newMedia.save();
-        res.status(201).json(newMedia);
+
+        if (existingFile) {
+          // 🔄 ตรวจพบไฟล์ซ้ำ! ทำการย้ายลิงก์ปัจจุบันไปเก็บในประวัติเวอร์ชันเก่าก่อน
+          existingFile.versions.push({
+            fileUrl: existingFile.fileUrl,
+            versionNumber: existingFile.version
+          });
+
+          // อัปเดตลิงก์ปัจจุบันเป็นไฟล์ใหม่ที่เพิ่งอัปโหลด และเพิ่มเลขเวอร์ชัน
+          existingFile.fileUrl = result.secure_url;
+          existingFile.version += 1;
+          await existingFile.save();
+
+          // 📜 บันทึกประวัติประธาน (Audit Log)
+          const log = new AuditLog({ action: 'UPLOAD_NEW_VERSION', details: `อัปโหลดเวอร์ชันใหม่ครอบทับไฟล์: ${req.file.originalname} (v${existingFile.version})`, performedBy: userName || 'User', ownerId });
+          await log.save();
+
+          return res.status(200).json(existingFile);
+        } else {
+          // 🆕 ไม่มีไฟล์ซ้ำ สร้างรายการใหม่ปกติ
+          const newMedia = new Media({
+            fileUrl: result.secure_url,
+            fileType: result.resource_type === 'image' ? 'image' : 'document',
+            fileName: req.file.originalname,
+            ownerId: ownerId,
+            sourceType: 'web',
+            folderId: targetFolderId
+          });
+          await newMedia.save();
+
+          const log = new AuditLog({ action: 'UPLOAD', details: `อัปโหลดไฟล์ใหม่: ${req.file.originalname}`, performedBy: userName || 'User', ownerId });
+          await log.save();
+
+          return res.status(201).json(newMedia);
+        }
       }
     );
-    
-    stream.end(req.file.buffer); // เริ่มการอัปโหลด
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ==========================================
-// 📅 API สำหรับระบบปฏิทิน (Phase 3)
-// ==========================================
-app.get('/api/events', async (req, res) => {
-  try {
-    const events = await Event.find({ ownerId: req.query.userId }).sort({ date: 1 });
-    res.json(events);
-  } catch (error) { res.status(500).json({ error: error.message }); }
+    stream.end(req.file.buffer);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/events', express.json(), async (req, res) => {
@@ -329,4 +347,13 @@ app.delete('/api/events/:id', async (req, res) => {
     res.json({ message: 'ลบกิจกรรมสำเร็จ' });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
+
+// --- 🟢 API ดึงบันทึกประวัติการใช้งาน Audit Log (Phase 2) ---
+app.get('/api/audit-logs', async (req, res) => {
+  try {
+    const logs = await AuditLog.find({ ownerId: req.query.userId }).sort({ createdAt: -1 }).limit(50);
+    res.json(logs);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 app.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));
