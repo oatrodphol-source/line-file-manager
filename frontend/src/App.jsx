@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import liff from '@line/liff';
 
-// 🟢 ฟังก์ชันช่วยเหลือ: แยกแยะไฟล์รูปภาพกับ PDF ให้แม่นยำ 100%
 const isImageFile = (file) => {
   if (!file) return false;
   const name = (file.fileName || '').toLowerCase();
@@ -12,6 +11,9 @@ const isImageFile = (file) => {
 };
 
 function App() {
+  // 🟢 State ใหม่สำหรับเช็คสถานะการโหลดระบบ
+  const [isReady, setIsReady] = useState(false);
+
   const [mediaFiles, setMediaFiles] = useState([]);
   const [profile, setProfile] = useState(null);
   const [dbUser, setDbUser] = useState(null);
@@ -53,7 +55,11 @@ function App() {
           setDbUser(res.data); fetchMedia(userProfile.userId); fetchEvents(userProfile.userId); fetchAuditLogs(userProfile.userId);
           if (res.data.role === 'admin') fetchConfig();
         }
-      } catch (err) { console.error("Error:", err); }
+        setIsReady(true); // 🟢 ให้ระบบรู้ว่าตรวจสอบ LIFF เสร็จแล้ว
+      } catch (err) { 
+        console.error("Error:", err); 
+        setIsReady(true);
+      }
     };
     initLiff();
   }, []);
@@ -63,56 +69,26 @@ function App() {
   const fetchMedia = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/media?userId=${userId}`); setMediaFiles(res.data); } catch (e) {} };
   const fetchFolders = async (userId, parentId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/folders?userId=${userId}&parentId=${parentId}`); setFolders(res.data); } catch (e) {} };
   const fetchEvents = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/events?userId=${userId}`); setEvents(res.data); } catch (e) {} };
-  
-  // 🟢 ป้องกันการแครชของหน้า Admin หากไม่มีข้อมูลใน DB
-  const fetchConfig = async () => { 
-    try { 
-      const res = await axios.get('https://line-file-manager.onrender.com/api/admin/config'); 
-      if (res.data && Object.keys(res.data).length > 0) setAiConfig(res.data); 
-    } catch (e) {} 
-  };
-  
+  const fetchConfig = async () => { try { const res = await axios.get('https://line-file-manager.onrender.com/api/admin/config'); if (res.data && Object.keys(res.data).length > 0) setAiConfig(res.data); } catch (e) {} };
   const fetchAuditLogs = async (userId) => { try { const res = await axios.get(`https://line-file-manager.onrender.com/api/audit-logs?userId=${userId}`); setAuditLogs(res.data); } catch (e) {} };
 
-  const createNewFolder = async () => {
-    if (!newFolderName.trim()) return;
-    try { const res = await axios.post('https://line-file-manager.onrender.com/api/folders', { name: newFolderName, ownerId: dbUser.lineId, parentId: currentFolder ? currentFolder._id : null }); setFolders([res.data, ...folders]); setNewFolderName(''); setShowNewFolderInput(false); fetchAuditLogs(dbUser.lineId); } catch (error) {}
-  };
-  const handleRenameFolder = async () => {
-    if (!editFolderName.trim()) return;
-    try { const res = await axios.put(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`, { name: editFolderName }); setCurrentFolder(res.data); setIsEditingFolder(false); fetchAuditLogs(dbUser.lineId); } catch (e) {}
-  };
-  const handleDeleteFolder = async () => {
-    if (window.confirm('⚠️ ลบโฟลเดอร์นี้?\n(ไฟล์ข้างในจะไม่หาย แต่จะถูกย้ายไปหน้าแรก)')) { try { await axios.delete(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`); setCurrentFolder(null); setIsEditingFolder(false); fetchMedia(dbUser.lineId); fetchAuditLogs(dbUser.lineId); } catch (e) {} }
-  };
+  const createNewFolder = async () => { if (!newFolderName.trim()) return; try { const res = await axios.post('https://line-file-manager.onrender.com/api/folders', { name: newFolderName, ownerId: dbUser.lineId, parentId: currentFolder ? currentFolder._id : null }); setFolders([res.data, ...folders]); setNewFolderName(''); setShowNewFolderInput(false); fetchAuditLogs(dbUser.lineId); } catch (error) {} };
+  const handleRenameFolder = async () => { if (!editFolderName.trim()) return; try { const res = await axios.put(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`, { name: editFolderName }); setCurrentFolder(res.data); setIsEditingFolder(false); fetchAuditLogs(dbUser.lineId); } catch (e) {} };
+  const handleDeleteFolder = async () => { if (window.confirm('⚠️ ลบโฟลเดอร์นี้?\n(ไฟล์ข้างในจะไม่หาย แต่จะถูกย้ายไปหน้าแรก)')) { try { await axios.delete(`https://line-file-manager.onrender.com/api/folders/${currentFolder._id}`); setCurrentFolder(null); setIsEditingFolder(false); fetchMedia(dbUser.lineId); fetchAuditLogs(dbUser.lineId); } catch (e) {} } };
 
   const handleSaveEvent = async () => {
     if (!newEvent.title) return alert("กรุณาใส่ชื่อกิจกรรม");
     try {
-      if (newEvent._id) {
-        const res = await axios.put(`https://line-file-manager.onrender.com/api/events/${newEvent._id}`, newEvent);
-        setEvents(events.map(ev => ev._id === res.data._id ? res.data : ev));
-      } else {
-        const res = await axios.post('https://line-file-manager.onrender.com/api/events', { ...newEvent, ownerId: dbUser.lineId });
-        setEvents([...events, res.data]);
-      }
+      if (newEvent._id) { const res = await axios.put(`https://line-file-manager.onrender.com/api/events/${newEvent._id}`, newEvent); setEvents(events.map(ev => ev._id === res.data._id ? res.data : ev)); } 
+      else { const res = await axios.post('https://line-file-manager.onrender.com/api/events', { ...newEvent, ownerId: dbUser.lineId }); setEvents([...events, res.data]); }
       setShowEventModal(false); setNewEvent({ _id: null, title: '', date: selectedDate.toLocaleDateString('en-CA'), isAllDay: true, startTime: '09:00', endTime: '10:00', url: '', description: '' }); fetchAuditLogs(dbUser.lineId);
     } catch (error) { alert("เกิดข้อผิดพลาด"); }
   };
   const handleDeleteEvent = async (id) => { if(window.confirm("ลบกิจกรรมนี้?")) { await axios.delete(`https://line-file-manager.onrender.com/api/events/${id}`); setEvents(events.filter(e => e._id !== id)); setShowEventModal(false); fetchAuditLogs(dbUser.lineId); } };
   const openEditEventModal = (ev) => { setNewEvent(ev); setShowEventModal(true); };
 
-  const handleNotifyEventLINE = async () => {
-    if (!newEvent._id) return;
-    try { await axios.post('https://line-file-manager.onrender.com/api/notify/event', { eventTitle: newEvent.title, eventDate: newEvent.date, userId: dbUser.lineId }); alert("🔔 ส่งการแจ้งเตือนลง LINE ของคุณเรียบร้อยแล้ว!"); fetchAuditLogs(dbUser.lineId); } catch (e) { alert("❌ ส่งแจ้งเตือนไม่สำเร็จ"); }
-  };
-
-  const handleBroadcast = async () => {
-    if (!broadcastMsg.trim()) return alert("กรุณาพิมพ์ข้อความ");
-    if (!window.confirm("📢 ยืนยันการส่งประกาศหาทุกคนในระบบ?")) return;
-    setIsBroadcasting(true);
-    try { await axios.post('https://line-file-manager.onrender.com/api/admin/broadcast', { message: broadcastMsg, adminId: dbUser.lineId }); alert("✅ ส่งประกาศสำเร็จ!"); setBroadcastMsg(''); fetchAuditLogs(dbUser.lineId); } catch (e) { alert("❌ บรอดแคสต์ล้มเหลว"); } finally { setIsBroadcasting(false); }
-  };
+  const handleNotifyEventLINE = async () => { if (!newEvent._id) return; try { await axios.post('https://line-file-manager.onrender.com/api/notify/event', { eventTitle: newEvent.title, eventDate: newEvent.date, userId: dbUser.lineId }); alert("🔔 ส่งการแจ้งเตือนลง LINE ของคุณเรียบร้อยแล้ว!"); fetchAuditLogs(dbUser.lineId); } catch (e) { alert("❌ ส่งแจ้งเตือนไม่สำเร็จ"); } };
+  const handleBroadcast = async () => { if (!broadcastMsg.trim()) return alert("กรุณาพิมพ์ข้อความ"); if (!window.confirm("📢 ยืนยันการส่งประกาศหาทุกคนในระบบ?")) return; setIsBroadcasting(true); try { await axios.post('https://line-file-manager.onrender.com/api/admin/broadcast', { message: broadcastMsg, adminId: dbUser.lineId }); alert("✅ ส่งประกาศสำเร็จ!"); setBroadcastMsg(''); fetchAuditLogs(dbUser.lineId); } catch (e) { alert("❌ บรอดแคสต์ล้มเหลว"); } finally { setIsBroadcasting(false); } };
 
   const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
@@ -133,25 +109,19 @@ function App() {
   const saveFileDetails = async () => {
     try {
       const tagArray = editForm.tags.split(',').map(t => t.trim()).filter(t => t); const formattedTags = tagArray.map(tag => tag.startsWith('#') ? tag : `#${tag}`);
-      const res = await axios.put(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`, { tags: formattedTags, note: editForm.note, folderId: editForm.folderId, fileName: editForm.fileName });
-      setMediaFiles(mediaFiles.map(f => f._id === selectedFile._id ? res.data : f)); setSelectedFile(res.data); setIsEditing(false); fetchAuditLogs(dbUser.lineId);
+      await axios.put(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`, { tags: formattedTags, note: editForm.note, folderId: editForm.folderId, fileName: editForm.fileName });
+      fetchMedia(dbUser.lineId); setIsEditing(false); fetchAuditLogs(dbUser.lineId); setSelectedFile(null);
     } catch (err) {}
   };
   const deleteFile = async () => { if (window.confirm('⚠️ ลบไฟล์นี้ถาวร?')) { await axios.delete(`https://line-file-manager.onrender.com/api/media/${selectedFile._id}`); setMediaFiles(mediaFiles.filter(f => f._id !== selectedFile._id)); setSelectedFile(null); fetchAuditLogs(dbUser.lineId); } };
   
-  // 🟢 อัปเกรดระบบดาวน์โหลด แก้บั๊ก PDF หน้าขาวในแอป LINE ถาวร
   const handleDownload = async (url, fileName) => {
-    if (liff.isInClient()) { 
-      // ใน LINE ไม่ต้องบังคับโหลด ให้เปิดลิงก์ตรงๆ เบราว์เซอร์มันจะจัดการแสดงผลเอง
-      liff.openWindow({ url: url, external: true }); 
-    } else { 
+    if (liff.isInClient()) { liff.openWindow({ url: url, external: true }); } 
+    else { 
       try { 
         let downloadUrl = url;
-        if (downloadUrl.includes('cloudinary.com') && !downloadUrl.includes('fl_attachment')) {
-          downloadUrl = downloadUrl.replace('/upload/', '/upload/fl_attachment/');
-        }
-        const response = await fetch(downloadUrl); const blob = await response.blob(); 
-        const blobUrl = window.URL.createObjectURL(blob); 
+        if (downloadUrl.includes('cloudinary.com') && !downloadUrl.includes('fl_attachment')) downloadUrl = downloadUrl.replace('/upload/', '/upload/fl_attachment/');
+        const response = await fetch(downloadUrl); const blob = await response.blob(); const blobUrl = window.URL.createObjectURL(blob); 
         const link = document.createElement('a'); link.href = blobUrl; link.download = fileName || 'download'; 
         document.body.appendChild(link); link.click(); document.body.removeChild(link); window.URL.revokeObjectURL(blobUrl); 
       } catch (err) { window.open(url, '_blank'); } 
@@ -180,6 +150,36 @@ function App() {
     return days;
   };
 
+  // 🟢 หน้าจอโหลดระบบ (กันจอขาว)
+  if (!isReady) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50 flex-col">
+        <div className="w-12 h-12 border-4 border-green-200 border-t-green-500 rounded-full animate-spin mb-4"></div>
+        <p className="text-gray-500 font-medium">กำลังเชื่อมต่อระบบ...</p>
+      </div>
+    );
+  }
+
+  // 🟢 หน้าจอล็อกอิน สำหรับคนที่เปิดเว็บผ่านลิงก์ Vercel ตรงๆ (ไม่ได้เปิดใน LINE)
+  if (!profile) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50 flex-col p-4 font-sans">
+        <div className="bg-white p-8 md:p-10 rounded-3xl shadow-xl text-center max-w-md w-full border border-gray-100">
+          <span className="text-6xl mb-6 block">📁</span>
+          <h1 className="text-2xl font-black text-gray-800 mb-2">Drive File Manager</h1>
+          <p className="text-gray-500 mb-8 text-sm leading-relaxed">
+            ระบบความปลอดภัยสำหรับองค์กร<br/>
+            กรุณาล็อกอินผ่านบัญชี LINE ของคุณเพื่อเข้าสู่ระบบ
+          </p>
+          <button onClick={() => liff.login()} className="w-full bg-[#06C755] hover:bg-[#05b34c] text-white font-bold py-3.5 px-8 rounded-xl transition-all shadow-md flex items-center justify-center gap-2">
+            <span className="text-xl text-white">💬</span> ล็อกอินด้วย LINE
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 👇 UI หลักของแอปเมื่อล็อกอินแล้ว (คงเดิมทุกประการ ปลอดภัย 100%)
   return (
     <div className="flex h-screen bg-gray-50 font-sans">
       
@@ -195,20 +195,16 @@ function App() {
                 {!newEvent.isAllDay && (<div className="border-t border-gray-700 md:border-gray-200 pt-4 flex justify-between items-center gap-4"><div className="flex flex-col w-1/2"><span className="text-xs text-gray-400">เริ่ม</span><input type="time" className="bg-transparent text-white md:text-black outline-none" value={newEvent.startTime} onChange={e => setNewEvent({...newEvent, startTime: e.target.value})} /></div><div className="flex flex-col w-1/2"><span className="text-xs text-gray-400">สิ้นสุด</span><input type="time" className="bg-transparent text-white md:text-black outline-none" value={newEvent.endTime} onChange={e => setNewEvent({...newEvent, endTime: e.target.value})} /></div></div>)}
               </div>
               <div className="bg-[#2c2c2e] md:bg-gray-50 rounded-xl overflow-hidden"><textarea placeholder="เพิ่มโน้ต..." className="w-full bg-transparent p-4 outline-none text-white md:text-black text-sm resize-none min-h-[100px]" value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})}></textarea></div>
-              {newEvent._id && (
-                 <div className="flex gap-2 mt-4"><button onClick={handleNotifyEventLINE} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">🔔 แจ้งเตือนลง LINE</button><button onClick={() => handleDeleteEvent(newEvent._id)} className="w-16 bg-red-900 bg-opacity-30 md:bg-red-50 text-red-500 rounded-xl flex items-center justify-center text-xl">🗑️</button></div>
-              )}
+              {newEvent._id && (<div className="flex gap-2 mt-4"><button onClick={handleNotifyEventLINE} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">🔔 แจ้งเตือนลง LINE</button><button onClick={() => handleDeleteEvent(newEvent._id)} className="w-16 bg-red-900 bg-opacity-30 md:bg-red-50 text-red-500 rounded-xl flex items-center justify-center text-xl">🗑️</button></div>)}
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal ดูไฟล์ */}
       {selectedFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-80 transition-opacity backdrop-blur-sm">
           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col md:flex-row max-h-[90vh]">
             <div className="flex-1 bg-gray-100 flex items-center justify-center relative min-h-[300px] group">
-              {/* 🟢 เรียกใช้ฟังก์ชันตรวจสอบรูป/PDF ที่ปลอดภัยที่สุด */}
               {isImageFile(selectedFile) ? (
                 <><img src={selectedFile.fileUrl} alt="full" className="max-w-full max-h-[50vh] md:max-h-[90vh] object-contain" /><button onClick={() => handleDownload(selectedFile.fileUrl, selectedFile.fileName || `image_${Date.now()}.jpg`)} className="absolute bottom-4 left-4 bg-gray-900 bg-opacity-70 hover:bg-opacity-100 text-white py-2 px-4 rounded-xl shadow-lg transition-all flex items-center gap-2">⬇️ บันทึกรูปภาพ</button></>
               ) : (
@@ -217,17 +213,12 @@ function App() {
               <button onClick={() => { setSelectedFile(null); setIsEditing(false); }} className="absolute top-4 right-4 bg-white text-gray-800 rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:bg-gray-200 font-black text-xl border-2 border-gray-100">✕</button>
             </div>
             <div className="w-full md:w-96 p-6 flex flex-col bg-white overflow-y-auto border-l border-gray-100">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-800">รายละเอียด <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">v{selectedFile.version}</span></h3>
-                {!isEditing ? (<div className="flex gap-2"><button onClick={() => handleShareFile(selectedFile.fileUrl)} className="text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg font-bold">🔗 แชร์</button><button onClick={() => setIsEditing(true)} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-bold">✏️ แก้ไข</button></div>) : (<div className="flex gap-2"><button onClick={() => setIsEditing(false)} className="text-sm bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold">ยกเลิก</button><button onClick={saveFileDetails} className="text-sm bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg font-bold">💾 บันทึก</button></div>)}
-              </div>
+              <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-gray-800">รายละเอียด <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">v{selectedFile.version}</span></h3>{!isEditing ? (<div className="flex gap-2"><button onClick={() => handleShareFile(selectedFile.fileUrl)} className="text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg font-bold">🔗 แชร์</button><button onClick={() => setIsEditing(true)} className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg font-bold">✏️ แก้ไข</button></div>) : (<div className="flex gap-2"><button onClick={() => setIsEditing(false)} className="text-sm bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold">ยกเลิก</button><button onClick={saveFileDetails} className="text-sm bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg font-bold">💾 บันทึก</button></div>)}</div>
               <div className="mb-4">{isEditing ? <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm font-bold focus:ring-2 focus:ring-green-500 outline-none mb-1" value={editForm.fileName || ''} onChange={(e) => setEditForm({...editForm, fileName: e.target.value})} /> : <p className="text-sm font-bold text-gray-700 mb-1">{selectedFile.fileName || 'ไม่ได้ตั้งชื่อไฟล์'}</p>}<p className="text-xs text-gray-400">📅 {new Date(selectedFile.createdAt).toLocaleString('th-TH')}</p></div>
               <div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📁 ย้ายแฟ้ม</p>{isEditing ? (<select className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-green-500 outline-none" value={editForm.folderId || 'null'} onChange={(e) => setEditForm({...editForm, folderId: e.target.value === 'null' ? null : e.target.value})}><option value="null">🏠 หน้าแรกสุด</option>{folders.map(f => <option key={f._id} value={f._id}>📂 {f.name}</option>)}</select>) : (<div className="bg-gray-50 text-gray-600 text-sm px-3 py-2 rounded-lg border border-gray-200">{folders.find(f => f._id === selectedFile.folderId)?.name ? `📂 ${folders.find(f => f._id === selectedFile.folderId).name}` : '🏠 อยู่ในหน้าแรกสุด'}</div>)}</div>
               <div className="mb-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">🏷️ แท็ก</p>{isEditing ? <input type="text" className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none" value={editForm.tags} onChange={(e) => setEditForm({...editForm, tags: e.target.value})} /> : <div className="flex flex-wrap gap-2">{selectedFile.tags?.map((t, i) => <span key={i} className="bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-md font-medium border border-indigo-100">{t}</span>)}</div>}</div>
               <div className="flex-1 flex flex-col"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">📝 โน้ต</p>{isEditing ? <textarea className="w-full flex-1 p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none min-h-[80px]" value={editForm.note} onChange={(e) => setEditForm({...editForm, note: e.target.value})}></textarea> : <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm text-gray-700 min-h-[80px] whitespace-pre-wrap overflow-y-auto">{selectedFile.note || "-"}</div>}</div>
-              {!isEditing && selectedFile.versions && selectedFile.versions.length > 0 && (
-                 <div className="mb-4 border-t border-gray-200 pt-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">⏳ เวอร์ชันย้อนหลัง ({selectedFile.versions.length})</p><div className="space-y-2 max-h-[120px] overflow-y-auto">{selectedFile.versions.map((v, idx) => (<div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg text-xs border border-gray-100"><span className="text-gray-600 font-medium">เวอร์ชัน v{v.versionNumber}</span><button onClick={() => handleDownload(v.fileUrl, `v${v.versionNumber}_${selectedFile.fileName}`)} className="text-indigo-600 font-bold hover:underline">⬇️ ดาวน์โหลด</button></div>))}</div></div>
-              )}
+              {!isEditing && selectedFile.versions && selectedFile.versions.length > 0 && (<div className="mb-4 border-t border-gray-200 pt-4"><p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">⏳ เวอร์ชันย้อนหลัง ({selectedFile.versions.length})</p><div className="space-y-2 max-h-[120px] overflow-y-auto">{selectedFile.versions.map((v, idx) => (<div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg text-xs border border-gray-100"><span className="text-gray-600 font-medium">เวอร์ชัน v{v.versionNumber}</span><button onClick={() => handleDownload(v.fileUrl, `v${v.versionNumber}_${selectedFile.fileName}`)} className="text-indigo-600 font-bold hover:underline">⬇️ ดาวน์โหลด</button></div>))}</div></div>)}
               {isEditing && <button onClick={deleteFile} className="mt-4 text-sm bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-bold w-full border border-red-200">🗑️ ลบไฟล์นี้ถาวร</button>}
             </div>
           </div>
@@ -260,17 +251,15 @@ function App() {
           {profile && <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 md:px-4 md:py-2 rounded-full border border-gray-200 shrink-0"><span className="text-sm font-semibold text-gray-700 hidden sm:block">{profile.displayName}</span><img src={profile.pictureUrl} alt="profile" className="w-8 h-8 rounded-full border-2 border-green-500 shadow-sm" /></div>}
         </header>
 
-        {/* 🟢 เมนูมือถือ: เพิ่ม setCurrentFolder(null) ให้ปุ่ม Admin เพื่อกันการแครชของหน้าเว็บ */}
+        {/* เมนูมือถือ */}
         <div className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex flex-col gap-3 shadow-sm z-0">
            {!showCalendar && selectedTag !== 'Admin' && selectedTag !== 'Logs' && <input type="search" placeholder="🔍 ค้นหา..." className="w-full bg-gray-100 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />}
           <div className="flex overflow-x-auto gap-2 pb-1">
             <button onClick={() => { setShowCalendar(false); setSelectedTag('All'); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${!showCalendar && selectedTag === 'All' && !currentFolder ? 'bg-green-500 text-white' : 'bg-gray-50 text-gray-600'}`}>🏠 หน้าแรก</button>
             <button onClick={() => setShowCalendar(true)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${showCalendar ? 'bg-red-500 text-white' : 'bg-gray-50 text-gray-600'}`}>📅 ปฏิทิน</button>
-            <button onClick={() => { setShowCalendar(false); setSelectedTag('Logs'); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${selectedTag === 'Logs' ? 'bg-amber-500 text-white' : 'bg-gray-50 text-gray-600'}`}>📜 ประวัติ</button>
+            <button onClick={() => { setShowCalendar(false); setSelectedTag('Logs'); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${selectedTag === 'Logs' ? 'bg-amber-500 text-white' : 'bg-gray-50 text-gray-600'}`}>📜 ประวัติ</button>
             {allTags.map((tag, i) => <button key={i} onClick={() => { setShowCalendar(false); setSelectedTag(tag); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium border ${!showCalendar && selectedTag === tag ? 'bg-green-500 text-white' : 'bg-gray-50 text-gray-600'}`}>🏷️ {tag}</button>)}
-            {dbUser?.role === 'admin' && (
-              <button onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold border ${selectedTag === 'Admin' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>⚙️ แอดมิน</button>
-            )}
+            {dbUser?.role === 'admin' && <button onClick={() => { setShowCalendar(false); setSelectedTag('Admin'); setCurrentFolder(null); }} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-bold border ${selectedTag === 'Admin' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>⚙️ แอดมิน</button>}
           </div>
         </div>
 
@@ -310,8 +299,6 @@ function App() {
                 <textarea rows="3" placeholder="พิมพ์ข้อความประกาศที่นี่..." className="w-full p-4 border border-gray-300 rounded-xl mb-4" value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)}></textarea>
                 <button onClick={handleBroadcast} disabled={isBroadcasting} className={`w-full font-bold py-3 rounded-xl text-white ${isBroadcasting ? 'bg-gray-300' : 'bg-blue-600'}`}>{isBroadcasting ? '⏳ กำลังส่ง...' : '🚀 ส่งประกาศ Broadcast'}</button>
               </div>
-              
-              {/* 🟢 อัปเกรดระบบตั้งค่า ป้องกันจอขาวเด็ดขาดด้วย Optional Chaining */}
               <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
                 <h2 className="text-2xl font-bold text-gray-800 mb-6">⚙️ ตั้งค่าระบบผู้ช่วย AI</h2>
                 <div className="mb-6 flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
@@ -355,7 +342,7 @@ function App() {
                 )}
               </div>
 
-              {/* หน้าไฟล์ (ใช้ฟังก์ชัน isImageFile แยกแยะ) */}
+              {/* หน้าไฟล์ */}
               <h3 className="text-sm font-bold text-gray-500 mb-4 border-t border-gray-200 pt-6">📄 ไฟล์เอกสารและรูปภาพ ({displayedFiles.length})</h3>
               {displayedFiles.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-gray-400"><span className="text-6xl mb-4">📭</span><p>ไม่พบไฟล์</p></div>
