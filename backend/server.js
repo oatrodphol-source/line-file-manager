@@ -10,6 +10,7 @@ const Media = require('./models/Media');
 const User = require('./models/User');
 const SystemConfig = require('./models/SystemConfig');
 const Folder = require('./models/Folder'); // 🟢 เพิ่มการเรียกใช้โมเดลโฟลเดอร์
+const Event = require('./models/Event');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() }); // ให้เก็บไฟล์ในหน่วยความจำชั่วคราวก่อนส่งขึ้น Cloud
 const app = express();
@@ -278,5 +279,30 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ==========================================
+// 📅 API สำหรับระบบปฏิทิน (Phase 3)
+// ==========================================
+app.get('/api/events', async (req, res) => {
+  try {
+    const events = await Event.find({ ownerId: req.query.userId }).sort({ date: 1 });
+    res.json(events);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/events', express.json(), async (req, res) => {
+  try {
+    const newEvent = new Event(req.body);
+    await newEvent.save();
+    res.status(201).json(newEvent);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/events/:id', async (req, res) => {
+  try {
+    await Event.findByIdAndDelete(req.params.id);
+    res.json({ message: 'ลบกิจกรรมสำเร็จ' });
+  } catch (error) { res.status(500).json({ error: error.message }); }
 });
 app.listen(PORT, () => console.log(`🚀 Server on ${PORT}`));
