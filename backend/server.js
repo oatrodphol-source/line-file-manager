@@ -246,6 +246,30 @@ async function handleEvent(event) {
   }
   return Promise.resolve(null);
 }
+// --- 🟢 เติมเต็ม Phase 1: เปลี่ยนชื่อ และ ลบโฟลเดอร์ ---
+app.put('/api/folders/:id', express.json(), async (req, res) => {
+  try {
+    const updatedFolder = await Folder.findByIdAndUpdate(req.params.id, { name: req.body.name }, { new: true });
+    res.json(updatedFolder);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.delete('/api/folders/:id', async (req, res) => {
+  try {
+    // 💡 ความฉลาดของระบบ: ถอดไฟล์ออกจากโฟลเดอร์ที่กำลังจะโดนลบ ให้กลับไปอยู่หน้าแรก (ป้องกันไฟล์หาย)
+    await Media.updateMany({ folderId: req.params.id }, { folderId: null });
+    await Folder.findByIdAndDelete(req.params.id);
+    res.json({ message: 'ลบโฟลเดอร์สำเร็จ' });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// --- 🟢 เติมเต็ม Phase 3: แก้ไขกิจกรรมในปฏิทิน ---
+app.put('/api/events/:id', express.json(), async (req, res) => {
+  try {
+    const updatedEvent = await Event.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json(updatedEvent);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
 
 const PORT = process.env.PORT || 3000;
 // --- 🟢 API สำหรับอัปโหลดไฟล์ผ่านหน้าเว็บโดยตรง ---
